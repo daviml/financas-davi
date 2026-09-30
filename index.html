@@ -131,9 +131,6 @@ a.link:hover,button.link:hover{text-decoration:underline}
 .pbar{height:10px;border-radius:99px;background:var(--surface-2);overflow:hidden;margin:8px 0 4px}
 .pbar i{display:block;height:100%;background:var(--paid-strong);border-radius:99px}
 .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:99px;background:var(--surface-2);color:var(--text-2);font-weight:600}
-.pill.va{background:#fff0d4;color:#7a4b00}
-:root[data-theme="dark"] .pill.va{background:#3a2c10;color:#f0c46a}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .pill.va{background:#3a2c10;color:#f0c46a}}
 
 /* stacked */
 .stack{display:flex;gap:2px;height:22px;border-radius:6px;overflow:hidden;margin:6px 0 12px}
@@ -332,7 +329,6 @@ const daysBetween=(a,b)=>Math.round((new Date(b+'T12:00')-new Date(a+'T12:00'))/
    ========================================================= */
 const GROUPS={
   receita:{label:'Receitas',sec:'RECEITAS'},
-  va:{label:'Vale-alimentação',sec:'RECEITAS'},
   fixa:{label:'Contas fixas',sec:'CONTAS FIXAS'},
   diadia:{label:'Dia a dia',sec:'DIA A DIA'},
   parcela:{label:'Parcelas e dívidas',sec:'PARCELAS E DÍVIDAS'},
@@ -340,8 +336,8 @@ const GROUPS={
   reserva:{label:'Reserva (destino da sobra)',sec:'DESTINO DA SOBRA'}
 };
 const BILL_GROUPS=['fixa','parcela','quitacao','reserva'];
-const METHODS=[['debito','Débito'],['pix','Pix'],['credito','Crédito'],['dinheiro','Dinheiro'],['va','Vale-alim.']];
-const methodLabel=k=>(METHODS.find(m=>m[0]===k)||[,k])[1];
+const METHODS=[['debito','Débito'],['pix','Pix'],['credito','Crédito'],['dinheiro','Dinheiro']];
+const methodLabel=k=>(METHODS.find(m=>m[0]===k)||[,k==='va'?'Vale-alim.':k])[1];
 
 function seed(){
   // Modelo em branco. Seus valores de verdade ficam só no dados.json (repositório privado) e neste aparelho.
@@ -349,10 +345,9 @@ function seed(){
   const mk=(name,group,extra={})=>({id:uid(),name,group,values:{},due:null,icon:'',...extra});
   const items=[
     mk('Salário líquido','receita',{salary:true}),
-    mk('Vale-alimentação','va'),
     mk('Aluguel','fixa'),mk('Energia','fixa'),mk('Água','fixa'),mk('Telefone / internet','fixa'),
     mk('Gasolina','diadia',{icon:'⛽'}),
-    mk('Mercado','diadia',{icon:'🛒',defMethod:'va'}),
+    mk('Mercado','diadia',{icon:'🛒'}),
     mk('Casa / manutenção','diadia',{icon:'🏠'}),
     mk('Alimentação fora / delivery','diadia',{icon:'🍔'}),
     mk('Farmácia / saúde','diadia',{icon:'💊'}),
@@ -372,6 +367,14 @@ let S;
 try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){S=null}
 if(!S||!S.items)S=seed();
 S.status=S.status||{};S.tx=S.tx||[];
+function dropVA(D){ // vale-alimentação não é mais controlado
+  let ch=false;
+  const gone=D.items.filter(i=>i.group==='va');
+  if(gone.length){D.del=D.del||{};gone.forEach(i=>D.del['it:'+i.id]=Date.now());D.items=D.items.filter(i=>i.group!=='va');ch=true}
+  D.items.forEach(i=>{if(i.defMethod==='va'){delete i.defMethod;ch=true}if(i.name==='Mercado (complemento do VA)'){i.name='Mercado';ch=true}});
+  if(D.lastMethod==='va'){D.lastMethod='debito';ch=true}
+  return ch;
+}
 
 const UI={tab:'inicio',month:null,filterCat:'',filterMethod:'',search:'',sheetMode:'plan'};
 try{const u=JSON.parse(sessionStorage.getItem('fin-ui')||'{}');Object.assign(UI,u)}catch(e){}
@@ -494,6 +497,7 @@ async function sync(){
         merged.lastMethod=S.lastMethod;merged.lastCat=S.lastCat;
       }else merged=remote&&remote.items?mergeData(S,remote):JSON.parse(JSON.stringify(S));
       merged.status=merged.status||{};merged.tx=merged.tx||[];
+      dropVA(merged);
       if(syncView(merged)!==syncView(S)){
         S=merged;
         try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
@@ -603,15 +607,13 @@ function calc(ym){
   const dd=byGroup('diadia');
   const cats=dd.map(i=>{
     const own=txs.filter(t=>t.cat===i.id);
-    const spent=own.filter(t=>t.method!=='va').reduce((s,t)=>s+t.amount,0);
-    const va=own.filter(t=>t.method==='va').reduce((s,t)=>s+t.amount,0);
+    const spent=own.reduce((s,t)=>s+t.amount,0);
     const plan=planned(i,ym);
-    return{item:i,plan,spent:round2(spent),va:round2(va),n:own.length};
+    return{item:i,plan,spent:round2(spent),n:own.length};
   });
   const orphan=txs.filter(t=>!dd.some(i=>i.id===t.cat));
-  if(orphan.length){cats.push({item:{id:'_orf',name:'Sem categoria',icon:'❔'},plan:0,spent:orphan.filter(t=>t.method!=='va').reduce((s,t)=>s+t.amount,0),va:orphan.filter(t=>t.method==='va').reduce((s,t)=>s+t.amount,0),n:orphan.length})}
-  const receita=sumV('receita'),va=sumV('va');
-  const vaSpent=round2(txs.filter(t=>t.method==='va').reduce((s,t)=>s+t.amount,0));
+  if(orphan.length){cats.push({item:{id:'_orf',name:'Sem categoria',icon:'❔'},plan:0,spent:orphan.reduce((s,t)=>s+t.amount,0),n:orphan.length})}
+  const receita=sumV('receita');
   const fixas=sumV('fixa'),parcelas=sumV('parcela'),quit=sumV('quitacao'),reserva=sumV('reserva');
   const diaPlan=cats.reduce((s,c)=>s+c.plan,0),diaSpent=round2(cats.reduce((s,c)=>s+c.spent,0));
   const diaProj=cats.reduce((s,c)=>s+Math.max(c.plan,c.spent),0);
@@ -624,7 +626,7 @@ function calc(ym){
   const billsAmt=billsNoRes.reduce((s,i)=>s+val(i,ym),0);
   const salaryIt=S.items.find(i=>i.salary)||byGroup('receita')[0];
   const salary=salaryIt?val(salaryIt,ym):0;
-  return{ym,cats,receita,va,vaSpent,fixas,parcelas,quit,reserva,diaPlan,diaSpent,diaProj,saidas,sobra,livre:sobra-reserva,
+  return{ym,cats,receita,fixas,parcelas,quit,reserva,diaPlan,diaSpent,diaProj,saidas,sobra,livre:sobra-reserva,
     bills,billsNoRes,paidBills,paidAmt,billsAmt,pctParc:salary?parcelas/salary:0,txs,
     jaSaiu:paidAmt+diaSpent, vaiSair:(billsAmt-paidAmt)+Math.max(0,diaProj-diaSpent)};
 }
@@ -739,7 +741,7 @@ function vInicio(){
   const diaLeft=Math.max(0,c.diaPlan-c.diaSpent);
   const daysLeft=isNow?dim(ym)-(+todayISO().slice(8))+1:dim(ym);
   const perDay=diaLeft/daysLeft;
-  const todaySpent=S.tx.filter(t=>t.date===todayISO()&&t.method!=='va').reduce((s,t)=>s+t.amount,0);
+  const todaySpent=S.tx.filter(t=>t.date===todayISO()).reduce((s,t)=>s+t.amount,0);
   const nPaid=c.bills.filter(i=>isPaid(i,ym)).length;
 
   const segs=[['Contas fixas',c.fixas,'var(--s1)'],['Dia a dia',c.diaProj,'var(--s2)'],['Parcelas e dívidas',c.parcelas+c.quit,'var(--s3)'],['Reserva',Math.min(c.reserva,Math.max(0,c.sobra)),'var(--s4)']];
@@ -760,7 +762,7 @@ function vInicio(){
     <div class="card kpi span-3">
       <div class="k-lbl">Receitas do mês</div>
       <div class="k-val num">${fmt(c.receita)}</div>
-      <div class="k-sub">+ ${fmt(c.va)} de vale-alimentação</div>
+      <div class="k-sub">${byGroup('receita').filter(i=>isPaid(i,ym)).length?'recebido: '+fmt(byGroup('receita').filter(i=>isPaid(i,ym)).reduce((s,i)=>s+val(i,ym),0)):'nada recebido ainda'}</div>
     </div>
     <div class="card kpi span-3">
       <div class="k-lbl">Já saiu · falta sair</div>
@@ -777,8 +779,8 @@ function vInicio(){
     <div class="card span-7">
       <h3>🧾 Dia a dia <span class="right t2 num">${fmt(c.diaSpent)} de ${fmt(c.diaPlan)}</span></h3>
       ${isNow||ym>todayYM()?`<div class="banner info" style="margin-bottom:6px"><div>Você pode gastar <b class="num" style="font-size:16px">${fmt(perDay)}</b> por dia ${isNow?`nos próximos ${daysLeft} dia${daysLeft>1?'s':''}`:'neste mês'} para ficar dentro do orçado.${isNow?` <span class="t2">Hoje: ${fmt(todaySpent)}</span>`:''}</div></div>`:''}
-      ${c.cats.filter(x=>x.plan>0||x.spent>0||x.va>0).map(catRow).join('')||'<div class="empty">Nenhum gasto neste mês ainda.</div>'}
-      ${c.cats.some(x=>!x.plan&&!x.spent&&!x.va)?`<div class="hint">Categorias sem orçamento e sem gastos ficam escondidas. Gastos em categorias sem orçamento reduzem a sobra.</div>`:''}
+      ${c.cats.filter(x=>x.plan>0||x.spent>0).map(catRow).join('')||'<div class="empty">Nenhum gasto neste mês ainda.</div>'}
+      ${c.cats.some(x=>!x.plan&&!x.spent)?`<div class="hint">Categorias sem orçamento e sem gastos ficam escondidas. Gastos em categorias sem orçamento reduzem a sobra.</div>`:''}
     </div>
 
     <div class="card span-5">
@@ -787,15 +789,7 @@ function vInicio(){
       ${pend.length>7?`<div class="hint">+ ${pend.length-7} outras pendentes</div>`:''}
     </div>
 
-    <div class="card span-4">
-      <h3>🍽️ Vale-alimentação</h3>
-      <div class="kpi"><div class="k-lbl">Saldo disponível</div><div class="k-val num ${c.va-c.vaSpent<0?'neg':''}">${fmt(c.va-c.vaSpent)}</div></div>
-      <div class="pbar"><i style="width:${c.va?Math.min(100,c.vaSpent/c.va*100):0}%;background:var(--s4)"></i></div>
-      <div class="t2" style="font-size:13px">Usado ${fmt(c.vaSpent)} de ${fmt(c.va)}</div>
-      <div class="hint">Lance com a forma de pagamento “Vale-alim.” — não conta no salário.</div>
-    </div>
-
-    <div class="card span-8">
+    <div class="card span-12">
       <h3>💸 Para onde vai o dinheiro do mês</h3>
       <div class="stack">${segs.filter(s=>s[1]>0).map(s=>`<span style="width:${s[1]/totSeg*100}%;background:${s[2]}" data-tip="<b>${s[0]}</b>${fmt(s[1])} · ${pct(s[1]/(c.receita||1))} da receita"></span>`).join('')}</div>
       <div class="legend">${segs.map(s=>`<div><i class="sw" style="background:${s[2]}"></i>${s[0]}</div><div class="num t2">${pct(s[1]/(c.receita||1))}</div><div class="num" style="text-align:right;font-weight:600">${fmt(s[1])}</div>`).join('')}</div>
@@ -815,7 +809,7 @@ function catRow(c){
   const rest=c.plan-c.spent;
   return `<div class="cat" data-action="filterCat" data-id="${c.item.id}" style="cursor:pointer">
     <div class="ic">${c.item.icon||'•'}</div>
-    <div class="nm">${esc(c.item.name)}${c.va?` <span class="pill va">VA ${fmt(c.va)}</span>`:''}</div>
+    <div class="nm">${esc(c.item.name)}</div>
     <div class="vl num"><b>${fmt(c.spent)}</b> <span class="muted">/ ${fmt(c.plan)}</span><br><span class="${rest<0?'neg':'t2'}" style="font-size:12px">${rest<0?'passou '+fmt(-rest):'restam '+fmt(rest)}</span></div>
     <div class="bar"><i class="${cls}" style="width:${Math.min(100,pct*100)}%"></i></div>
   </div>`;
@@ -837,7 +831,7 @@ function txRow(t){
   return `<div class="tx" data-action="editTx" data-id="${t.id}">
     <div class="ic">${it?.icon||'❔'}</div>
     <div class="info"><div class="nm">${esc(t.desc||it?.name||'Gasto')}</div>
-      <div class="meta">${esc(it?.name||'Sem categoria')} · ${WD[date.getDay()]} ${dmy(t.date)} · ${t.method==='va'?'<span class="pill va">Vale-alim.</span>':methodLabel(t.method)}</div></div>
+      <div class="meta">${esc(it?.name||'Sem categoria')} · ${WD[date.getDay()]} ${dmy(t.date)} · ${methodLabel(t.method)}</div></div>
     <div class="amt num">${fmt(t.amount)}</div>
   </div>`;
 }
@@ -866,8 +860,8 @@ function vLanc(){
     </div>
     <div class="card span-5">
       <h3>Por categoria <span class="right"><button class="link" data-action="exportCsv">exportar CSV</button></span></h3>
-      ${c.cats.filter(x=>x.plan||x.spent||x.va).map(catRow).join('')||'<div class="empty">Sem dados.</div>'}
-      <div class="cat" style="border-top:1px solid var(--border);margin-top:4px"><div class="ic">Σ</div><div class="nm">Total (sem VA)</div><div class="vl num"><b>${fmt(c.diaSpent)}</b> <span class="muted">/ ${fmt(c.diaPlan)}</span></div></div>
+      ${c.cats.filter(x=>x.plan||x.spent).map(catRow).join('')||'<div class="empty">Sem dados.</div>'}
+      <div class="cat" style="border-top:1px solid var(--border);margin-top:4px"><div class="ic">Σ</div><div class="nm">Total</div><div class="vl num"><b>${fmt(c.diaSpent)}</b> <span class="muted">/ ${fmt(c.diaPlan)}</span></div></div>
       <div class="hint">Toque numa categoria para filtrar a lista. Os valores orçados vêm da aba Orçamento.</div>
     </div>
   </div>`;
@@ -945,12 +939,12 @@ function vOrc(){
   const cell=(it,m,opts={})=>{
     const v=opts.plan?planned(it,m):val(it,m),p=!opts.noPaid&&isPaid(it,m);
     let inner=fmtN(v),cls='c num ed'+(p?' paid':'')+(v?'':' zero')+(m===cur?' cur':'');
-    if(opts.spent!=null&&(opts.spent||opts.va)){
-      const ov=opts.spent>v;inner+=(opts.spent?`<span class="spent ${ov?'over':''}">gasto ${fmtN(opts.spent)}</span>`:'')+(opts.va?`<span class="spent">VA ${fmtN(opts.va)}</span>`:'');
+    if(opts.spent){
+      const ov=opts.spent>v;inner+=`<span class="spent ${ov?'over':''}">gasto ${fmtN(opts.spent)}</span>`;
     }
     return `<td class="${cls}" data-action="cell" data-id="${it.id}" data-m="${m}">${inner}</td>`;
   };
-  const row=(it,opts={})=>`<tr class="${opts.cls||''}"><td class="rowh" title="${esc(it.name)}">${opts.debt?`<span class="lbl-debt">${esc(it.name)}</span>`:esc(it.name)}</td>${ms.map(m=>cell(it,m,{...opts,spent:opts.dd?C[m].cats.find(x=>x.item.id===it.id)?.spent:null,va:opts.dd?C[m].cats.find(x=>x.item.id===it.id)?.va:0})).join('')}</tr>`;
+  const row=(it,opts={})=>`<tr class="${opts.cls||''}"><td class="rowh" title="${esc(it.name)}">${opts.debt?`<span class="lbl-debt">${esc(it.name)}</span>`:esc(it.name)}</td>${ms.map(m=>cell(it,m,{...opts,spent:opts.dd?C[m].cats.find(x=>x.item.id===it.id)?.spent:null})).join('')}</tr>`;
   const tot=(label,f,cls='sub',fm=fmtN)=>`<tr class="${cls}"><td class="rowh">${label}</td>${ms.map(m=>{const v=f(C[m],m);return`<td class="c num${m===cur?' cur':''}${typeof v==='number'&&v<0?' over':''}">${fm(v)}</td>`}).join('')}</tr>`;
   const sec=t=>`<tr class="sec"><td class="rowh">${t}</td><td colspan="${ms.length}"></td></tr>`;
   const ddItems=byGroup('diadia').filter(i=>UI.sheetMode==='all'||ms.some(m=>planned(i,m)>0||C[m].cats.find(x=>x.item.id===i.id)?.n));
@@ -981,7 +975,6 @@ function vOrc(){
       ${sec('RECEITAS')}
       ${byGroup('receita').map(i=>row(i)).join('')}
       ${tot('Total de receitas',c=>c.receita)}
-      ${byGroup('va').map(i=>row(i,{cls:'ital',noPaid:true})).join('')}
       ${sec('CONTAS FIXAS')}
       ${byGroup('fixa').map(i=>row(i)).join('')}
       ${tot('Subtotal contas fixas',c=>c.fixas)}
@@ -1275,9 +1268,8 @@ function txModal(t){
     </div>`,m=>{
       const amt=m.querySelector('#txAmt');setTimeout(()=>amt.focus(),30);
       const hint=()=>{const c=calc(m.querySelector('#txDate').value.slice(0,7));const x=c.cats.find(z=>z.item.id===cat);const a=parseMoney(amt.value);
-        if(method==='va'){m.querySelector('#txHint').innerHTML=`Saldo do vale depois deste gasto: <b>${fmt(c.va-c.vaSpent-a)}</b>`;return}
         if(!monthsList().includes(m.querySelector('#txDate').value.slice(0,7))){m.querySelector('#txHint').innerHTML='⚠ Esta data está fora do período do plano ('+ymLabel(S.settings.start)+' a '+ymLabel(S.settings.end)+') — o gasto não vai aparecer nos painéis.';return}
-        if(x)m.querySelector('#txHint').innerHTML=x.plan?`${esc(x.item.name)}: depois deste gasto restam <b class="${x.plan-x.spent-a<0?'neg':''}">${fmt(x.plan-x.spent-a+(isNew?0:(t.method!=='va'&&t.cat===cat?t.amount:0)))}</b> de ${fmt(x.plan)}`:`Categoria sem orçamento — este gasto reduz a sobra do mês.`};
+        if(x)m.querySelector('#txHint').innerHTML=x.plan?`${esc(x.item.name)}: depois deste gasto restam <b class="${x.plan-x.spent-a<0?'neg':''}">${fmt(x.plan-x.spent-a+(isNew?0:(t.cat===cat?t.amount:0)))}</b> de ${fmt(x.plan)}`:`Categoria sem orçamento — este gasto reduz a sobra do mês.`};
       m.querySelector('#txCats').onclick=e=>{const b=e.target.closest('[data-cat]');if(!b)return;cat=b.dataset.cat;m.querySelectorAll('#txCats .chip').forEach(c=>c.classList.toggle('on',c===b));const dm=itemById(cat)?.defMethod;if(dm){method=dm;m.querySelectorAll('#txMeth .chip').forEach(c=>c.classList.toggle('on',c.dataset.m===dm))}hint()};
       m.querySelector('#txMeth').onclick=e=>{const b=e.target.closest('[data-m]');if(!b)return;method=b.dataset.m;m.querySelectorAll('#txMeth .chip').forEach(c=>c.classList.toggle('on',c===b));hint()};
       amt.oninput=hint;m.querySelector('#txDate').onchange=hint;hint();
@@ -1300,7 +1292,7 @@ function txModal(t){
 }
 
 function cellModal(it,ym){
-  const s=st(it,ym)||{};const canPay=!['va','diadia'].includes(it.group);
+  const s=st(it,ym)||{};const canPay=it.group!=='diadia';
   const isDD=it.group==='diadia';
   const cc=isDD?calc(ym).cats.find(x=>x.item.id===it.id):null;
   openModal(`
@@ -1309,7 +1301,7 @@ function cellModal(it,ym){
       <label class="f">${isDD?'Valor orçado':'Valor previsto (planilha)'}</label>
       <input class="in num" id="cPlan" inputmode="decimal" value="${planned(it,ym)?NUM.format(planned(it,ym)):''}" placeholder="0,00">
       <label class="check"><input type="checkbox" id="cFwd"> Aplicar este valor também aos próximos meses (até ${ymLabel(S.settings.end)})</label>
-      ${isDD?`<div class="hint">Gasto real neste mês: <b>${fmt(cc?.spent)}</b>${cc?.va?' + '+fmt(cc.va)+' no VA':''}. Lance gastos pelo botão “+ Novo gasto”.</div>`:''}
+      ${isDD?`<div class="hint">Gasto real neste mês: <b>${fmt(cc?.spent)}</b>. Lance gastos pelo botão “+ Novo gasto”.</div>`:''}
       ${canPay?`
       <hr style="border:0;border-top:1px solid var(--border);margin:16px 0 4px">
       <label class="check" style="font-weight:600"><input type="checkbox" id="cPaid" ${s.paid?'checked':''}> ${it.group==='receita'?'Recebido':it.group==='reserva'?'Guardado':'Pago'} (fica verde)</label>
@@ -1508,7 +1500,7 @@ setInterval(()=>{if(document.visibilityState==='visible'&&!syncBusy)sync()},6000
 
 applyTheme();
 snapRecs();
-if(!localStorage.getItem(KEY))save();
+if(!localStorage.getItem(KEY)||dropVA(S))save();
 render();
 initFileHandle();
 sync();
