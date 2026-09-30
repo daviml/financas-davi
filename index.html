@@ -706,7 +706,15 @@ const byGroup=g=>S.items.filter(i=>i.group===g);
 const itemById=id=>S.items.find(i=>i.id===id);
 const planned=(it,ym)=>it.values[ym]||0;
 const st=(it,ym)=>S.status[ym+'|'+it.id];
-const isPaid=(it,ym)=>!!(st(it,ym)&&st(it,ym).paid);
+// Desconto em folha: a parcela conta como paga sozinha a partir do dia de desconto (it.due) do mês.
+// Se você desmarcar, fica gravado {paid:false, manual:true} e vale o que você marcou.
+const FOLHA_FECHA=20; // dia do mês anterior em que a folha fecha (a parcela já está reservada)
+const folhaDate=(it,ym)=>ym+'-'+pad(Math.min(it.due||5,dim(ym)));
+const autoPaid=(it,ym)=>!!it.folha&&planned(it,ym)>0&&todayISO()>=folhaDate(it,ym);
+const isPaid=(it,ym)=>{const s=st(it,ym);if(s&&s.manual&&!s.paid)return false;return!!(s&&s.paid)||autoPaid(it,ym)};
+// parcela já reservada na folha (não entra mais no valor de quitação)
+const folhaCommitted=(it,ym)=>!!it.folha&&todayISO()>=ymAdd(ym,-1)+'-'+pad(FOLHA_FECHA);
+const openParcels=it=>monthsList().filter(m=>planned(it,m)>0&&!isPaid(it,m)&&!folhaCommitted(it,m));
 const val=(it,ym)=>{const s=st(it,ym);return s&&s.amount!=null?s.amount:planned(it,ym)};
 const resAdjIn=m=>(S.resAdj||[]).filter(a=>clampMonth(a.date.slice(0,7))===m).reduce((s,a)=>s+a.amount,0);
 const txOf=ym=>S.tx.filter(t=>t.date.slice(0,7)===ym);
@@ -743,6 +751,8 @@ function calc(ym){
 function dueInfo(it,ym){
   const s=st(it,ym);
   if(s&&s.paid)return{cls:'paid',text:(it.group==='reserva'?'Guardado':it.group==='receita'?'Recebido':'Pago')+(s.date?' em '+dmy(s.date):'')};
+  if(isPaid(it,ym))return{cls:'paid',text:'Descontado em folha em '+dmy(folhaDate(it,ym))};
+  if(it.folha&&!(s&&s.manual)){const f=folhaDate(it,ym),diff=daysBetween(todayISO(),f);return{cls:diff<=3?'soon':'',text:'Desconto em folha dia '+dmy(f)+(diff===0?' (hoje)':diff>0&&diff<=3?' (em '+diff+' dia'+(diff>1?'s':'')+')':''),diff}}
   if(!it.due)return{cls:'',text:'sem vencimento definido'};
   const d=Math.min(it.due,dim(ym));const dueISO=ym+'-'+pad(d);const t=todayISO();
   const diff=daysBetween(t,dueISO);
@@ -769,7 +779,7 @@ function solveRate(it,months,target){
   return(lo+hi)/2;
 }
 function debtCash(it){
-  const un=monthsList().filter(m=>planned(it,m)>0&&!isPaid(it,m));
+  const un=openParcels(it);
   const nom=un.reduce((s,m)=>s+val(it,m),0);
   const R=debtRate(it);
   if(!R)return{cash:nom,nom,rate:null,src:null};
@@ -1477,7 +1487,7 @@ function billModal(it,ym){
     <div class="m-hd"><h3>${esc(it.name)}</h3><button class="x" data-close>×</button></div>
     <div class="m-bd">
       <div class="t2">${ymLong(ym)} · previsto ${fmt(planned(it,ym))}</div>
-      <label class="check" style="font-weight:600"><input type="checkbox" id="bPaid" ${s.paid?'checked':''}> ${it.group==='receita'?'Recebido':it.group==='reserva'?'Guardado':'Pago'}</label>
+      <label class="check" style="font-weight:600"><input type="checkbox" id="bPaid" ${isPaid(it,ym)?'checked':''}> ${it.group==='receita'?'Recebido':it.group==='reserva'?'Guardado':'Pago'}</label>
       <div class="two">
         <div><label class="f">Valor pago</label><input class="in num" id="bAmt" inputmode="decimal" value="${NUM.format(val(it,ym))}"></div>
         <div><label class="f">Data do pagamento</label><input class="in" type="date" id="bDate" value="${s.date||todayISO()}"></div>
@@ -1485,6 +1495,7 @@ function billModal(it,ym){
       <label class="f">Vence todo dia</label>
       <input class="in" id="bDue" type="number" min="1" max="31" value="${it.due||''}" placeholder="ex.: 10">
       <div class="hint">O dia de vencimento vale para todos os meses e gera os avisos “vence em X dias” / “atrasada”.</div>
+      ${it.group==='parcela'?`<label class="check"><input type="checkbox" id="bFolha" ${it.folha?'checked':''}> Desconto em folha — fica paga sozinha todo mês no dia do vencimento</label>`:''}
       <label class="check"><input type="checkbox" id="bFwd"> Mudar também o valor previsto deste e dos próximos meses para o valor acima</label>
     </div>
     <div class="m-ft"><button class="btn" data-close>Cancelar</button><button class="btn primary" id="bSave">Salvar</button></div>`,m=>{
@@ -1494,7 +1505,11 @@ function billModal(it,ym){
         const due=m.querySelector('#bDue').value;it.due=due?Math.max(1,Math.min(31,parseInt(due))):null;
         if(m.querySelector('#bFwd').checked){monthsList().filter(x=>x>=ym).forEach(x=>{if(a)it.values[x]=a;else delete it.values[x]})}
         const differs=Math.abs(a-planned(it,ym))>.005;
-        if(paid||differs)S.status[ym+'|'+it.id]={paid,amount:differs?a:null,date:paid?(d||todayISO()):null};else delete S.status[ym+'|'+it.id];
+        const bf=m.querySelector('#bFolha');if(bf){if(bf.checked){it.folha=true;if(!it.due)it.due=5}else delete it.folha}
+        const k=ym+'|'+it.id,auto=autoPaid(it,ym);
+        if(paid){if(auto&&!differs)delete S.status[k];else S.status[k]={paid:true,amount:differs?a:null,date:d||todayISO()}}
+        else if(auto)S.status[k]={paid:false,manual:true,amount:differs?a:null,date:null};
+        else if(differs)S.status[k]={paid:false,amount:a,date:null};else delete S.status[k];
         save();closeModal();render();toast('Conta atualizada',true);
       };
     });
@@ -1562,6 +1577,7 @@ function incomeModal(){
 
 function quoteModal(it){
   const un=monthsList().filter(m=>planned(it,m)>0&&!isPaid(it,m));
+  const firstOpen=openParcels(it)[0];
   openModal(`
     <div class="m-hd"><h3>Valor de quitação · ${esc(it.name)}</h3><button class="x" data-close>×</button></div>
     <div class="m-bd">
@@ -1571,7 +1587,7 @@ function quoteModal(it){
         <div><label class="f">Vence todo dia</label><input class="in" id="qDue" type="number" min="1" max="31" value="${it.due||''}" placeholder="ex.: 2"></div>
       </div>
       <label class="f">Esse valor quita as parcelas a partir de</label>
-      <select class="in" id="qFrom">${un.map((m,k)=>`<option value="${m}" ${it.quote&&it.quote.from===m?'selected':''}>${ymLong(m)} · ${un.length-k} parcela${un.length-k!==1?'s':''}</option>`).join('')}</select>
+      <select class="in" id="qFrom">${un.map((m,k)=>`<option value="${m}" ${(it.quote?it.quote.from===m:firstOpen===m)?'selected':''}>${ymLong(m)} · ${un.length-k} parcela${un.length-k!==1?'s':''}</option>`).join('')}</select>
       <div class="hint">Escolha a primeira parcela que o valor de quitação cobre. As anteriores (já descontadas ou pagas) não entram.</div>
       <label class="check" id="qPrevWrap" style="display:none"><input type="checkbox" id="qPrev" checked> <span id="qPrevTxt"></span></label>
       <label class="check"><input type="checkbox" id="qAll" ${S.settings.consigRate==null||S.settings.consigRateFrom===it.id?'checked':''}> Usar esta taxa como estimativa para os outros consignados que ainda não têm valor informado</label>
@@ -1601,7 +1617,7 @@ function quoteModal(it){
 
 function payoffModal(it){
   const d=debtInfo(it);
-  const unpaid=d.ms.filter(m=>!isPaid(it,m));
+  const unpaid=openParcels(it);
   const nominal=unpaid.reduce((s,m)=>s+val(it,m),0);
   openModal(`
     <div class="m-hd"><h3>Quitar / amortizar · ${esc(it.name)}</h3><button class="x" data-close>×</button></div>
@@ -1707,8 +1723,11 @@ function applyTheme(){
 function togglePaid(it,ym){
   snap();
   const k=ym+'|'+it.id,s=S.status[k];
-  if(s&&s.paid){if(s.amount!=null)S.status[k]={...s,paid:false,date:null};else delete S.status[k];save();render();toast(it.name+' desmarcada',true)}
-  else{S.status[k]={...(s||{amount:null}),paid:true,date:todayISO()};save();render();toast('✓ '+it.name+' '+(it.group==='receita'?'recebido':it.group==='reserva'?'guardado':'paga')+' · '+fmt(val(it,ym)),true)}
+  if(isPaid(it,ym)){
+    if(autoPaid(it,ym))S.status[k]={amount:s?.amount??null,paid:false,manual:true,date:null};
+    else if(s&&s.amount!=null)S.status[k]={...s,paid:false,date:null};else delete S.status[k];
+    save();render();toast(it.name+' desmarcada',true)}
+  else{const{manual,...rest}=s||{amount:null};S.status[k]={...rest,paid:true,date:todayISO()};save();render();toast('✓ '+it.name+' '+(it.group==='receita'?'recebido':it.group==='reserva'?'guardado':'paga')+' · '+fmt(val(it,ym)),true)}
 }
 
 document.addEventListener('click',e=>{
