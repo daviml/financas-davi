@@ -1179,6 +1179,7 @@ function vDividas(){
     <div class="card kpi span-3" style="border-color:var(--paid-strong)"><div class="k-lbl">Falta pagar (à vista)</div><div class="k-val num pos">${fmt(cashTotal)}</div><div class="k-sub">quitando tudo hoje: <b class="pos">${fmt(remTotal-cashTotal)}</b> a menos de juros${consigAct.length?` · desconto só nos ${consigAct.length} consignados${anyEst?' (parte estimada)':''}`:''}</div></div>
     <div class="card kpi span-3"><div class="k-lbl">Livre de parcelas em</div><div class="k-val">${freeMonth?ymLong(freeMonth):'—'}</div><div class="k-sub">${freeMonth?'faltam '+Math.max(0,monthsDiff(todayYM(),freeMonth))+' meses':''}</div></div>
     <div class="card kpi span-3"><div class="k-lbl">Parcelas em ${ymLong(UI.month)}</div><div class="k-val num">${fmt(cur.parcelas)}</div><div class="k-sub">${pct(cur.pctParc)} do salário</div></div>
+    ${payToCards()}
     <div class="card span-12">
       <h3>Total de parcelas por mês <span class="right t2">clique numa barra para abrir o mês</span></h3>
       <div class="chart" id="chParc"></div>
@@ -1195,10 +1196,39 @@ function vDividas(){
   </div>`;
 }
 function monthsDiff(a,b){const[y1,m1]=a.split('-').map(Number),[y2,m2]=b.split('-').map(Number);return(y2-y1)*12+(m2-m1)}
+// Dívidas no nome de outra pessoa: você repassa o valor para ela todo mês (it.payTo = nome)
+function payToCards(){
+  const ym=UI.month,groups={};
+  byGroup('parcela').filter(i=>i.payTo).forEach(i=>(groups[i.payTo]=groups[i.payTo]||[]).push(i));
+  return Object.entries(groups).map(([who,list])=>{
+    const mon=list.filter(i=>planned(i,ym)>0||st(i,ym));
+    const monTot=mon.reduce((s,i)=>s+val(i,ym),0),sent=mon.filter(i=>isPaid(i,ym));
+    const sentTot=sent.reduce((s,i)=>s+val(i,ym),0);
+    const infos=list.map(i=>({i,d:debtInfo(i)}));
+    const owed=infos.reduce((s,x)=>s+x.d.remVal,0);
+    const last=infos.map(x=>x.d.last).filter(Boolean).sort().pop();
+    const nx=ymAdd(ym,1),nxTot=list.reduce((s,i)=>s+val(i,nx),0);
+    const all=sent.length===mon.length&&mon.length>0;
+    return `<div class="card span-12" style="border-color:#e0a030">
+      <h3>💛 Repasse para ${esc(who)} <span class="right t2">${list.length} dívida${list.length!==1?'s':''} no nome dela</span></h3>
+      <div class="grid2" style="gap:12px;margin-bottom:6px">
+        <div class="kpi span-4"><div class="k-lbl">Mandar em ${ymLong(ym)}</div><div class="k-val num">${fmt(monTot)}</div>
+          <div class="k-sub">${mon.length?(all?`<span class="pos" style="font-weight:700">✓ enviado</span>`:sent.length?`${fmt(sentTot)} já enviado · falta <b>${fmt(monTot-sentTot)}</b>`:'ainda não enviado'):'nada neste mês'}</div>
+          ${mon.length&&!all?`<button class="btn sm good" style="margin-top:8px" data-action="payToSend" data-who="${esc(who)}">✓ Marcar ${fmt(monTot-sentTot)} como enviado</button>`:''}</div>
+        <div class="kpi span-4"><div class="k-lbl">Devo no total para ${esc(who)}</div><div class="k-val num">${fmt(owed)}</div><div class="k-sub">parcelas ainda não enviadas, de todos os meses</div></div>
+        <div class="kpi span-4"><div class="k-lbl">Último repasse</div><div class="k-val">${last?ymLong(last):'—'}</div><div class="k-sub">${last?'faltam '+Math.max(0,monthsDiff(ym,last)+1)+' meses (contando este) · próximo mês: '+fmt(nxTot):''}</div></div>
+      </div>
+      <div style="overflow:auto"><table class="items num"><thead><tr><th>Dívida</th><th style="text-align:right">${ymLabel(ym)}</th><th style="text-align:right">Restante</th><th style="text-align:right">Termina</th></tr></thead><tbody>
+        ${infos.sort((a,b)=>(a.d.last||'').localeCompare(b.d.last||'')).map(({i,d})=>`<tr><td>${isPaid(i,ym)?'✓ ':''}${esc(i.name)}</td><td style="text-align:right" class="${isPaid(i,ym)?'pos':planned(i,ym)?'':'muted'}">${planned(i,ym)||st(i,ym)?fmt(val(i,ym)):'–'}</td><td style="text-align:right">${d.remVal?fmt(d.remVal):'<span class="pos">quitada</span>'}</td><td style="text-align:right" class="t2">${d.last?ymLabel(d.last):'–'}</td></tr>`).join('')}
+        <tr style="font-weight:700"><td>Total</td><td style="text-align:right">${fmt(monTot)}</td><td style="text-align:right">${fmt(owed)}</td><td></td></tr>
+      </tbody></table></div>
+    </div>`;
+  }).join('');
+}
 function debtRow(i,d){
   const pct=d.total?d.paid/d.total:0;
   return `<div class="debt ${d.remaining===0?'done':''}">
-    <div class="row1"><span class="nm">${esc(i.name)}</span><span class="num" style="text-align:right"><b>${fmt(d.remVal)}</b> <span class="muted">restante</span>${d.remaining>0&&isConsig(i)?(()=>{const c=debtCash(i);return `<br><b class="pos">${fmt(c.cash)}</b> <span class="muted">restante à vista</span>`})():''}</span></div>
+    <div class="row1"><span class="nm">${esc(i.name)}${i.payTo?` <span class="pill" style="background:#fff0d4;color:#7a4b00">via ${esc(i.payTo)}</span>`:''}</span><span class="num" style="text-align:right"><b>${fmt(d.remVal)}</b> <span class="muted">restante</span>${d.remaining>0&&isConsig(i)?(()=>{const c=debtCash(i);return `<br><b class="pos">${fmt(c.cash)}</b> <span class="muted">restante à vista</span>`})():''}</span></div>
     <div class="pbar" style="height:8px"><i style="width:${pct*100}%"></i></div>
     <div class="meta"><span>${d.paid} de ${d.total} pagas</span><span>parcela ${fmt(d.parcela)}</span>${d.last?`<span>termina em ${ymLabel(d.last)}</span>`:''}${d.nextUnpaid?`<span>próxima: ${ymLabel(d.nextUnpaid)}</span>`:''}${d.remaining>0&&isConsig(i)?(()=>{const c=debtCash(i);return c.rate!=null?`<span title="${c.src==='quote'?'calculada pelo valor de quitação que você informou'+(i.quote?' em '+dmy(i.quote.date):''):'estimada com a taxa de outro consignado — informe o valor real para ficar exato'}">juros ${pctRate(c.rate)} ${c.src==='quote'?'✓':'(estimado)'}</span>`:''})()+`<button class="link" data-action="quote" data-id="${i.id}">informar valor de quitação</button>`:''}${d.remaining>0?`<button class="link" data-action="payoff" data-id="${i.id}" style="margin-left:auto">💸 quitar / amortizar</button>`:''}</div>
     ${(i.payoffs||[]).map(po=>`<div class="meta" style="color:var(--paid-ink)">✓ ${po.mode==='total'?'Quitada':'Amortizada'} em ${dmy(po.date)}/${po.date.slice(2,4)} com ${fmt(po.amount)} · ${po.removed} parcela${po.removed!==1?'s':''} a menos${po.saved>0.005?' · economia de '+fmt(po.saved):''}</div>`).join('')}
@@ -1495,7 +1525,10 @@ function billModal(it,ym){
       <label class="f">Vence todo dia</label>
       <input class="in" id="bDue" type="number" min="1" max="31" value="${it.due||''}" placeholder="ex.: 10">
       <div class="hint">O dia de vencimento vale para todos os meses e gera os avisos “vence em X dias” / “atrasada”.</div>
-      ${it.group==='parcela'?`<label class="check"><input type="checkbox" id="bFolha" ${it.folha?'checked':''}> Desconto em folha — fica paga sozinha todo mês no dia do vencimento</label>`:''}
+      ${it.group==='parcela'?`<label class="check"><input type="checkbox" id="bFolha" ${it.folha?'checked':''}> Desconto em folha — fica paga sozinha todo mês no dia do vencimento</label>
+      <label class="f">Dívida no nome de outra pessoa? Repasse para</label>
+      <input class="in" id="bPayTo" value="${esc(it.payTo||'')}" placeholder="ex.: Mãe (deixe vazio se a dívida é sua)" list="payToList">
+      <datalist id="payToList">${[...new Set(S.items.map(x=>x.payTo).filter(Boolean))].map(n=>`<option value="${esc(n)}">`).join('')}</datalist>`:''}
       <label class="check"><input type="checkbox" id="bFwd"> Mudar também o valor previsto deste e dos próximos meses para o valor acima</label>
     </div>
     <div class="m-ft"><button class="btn" data-close>Cancelar</button><button class="btn primary" id="bSave">Salvar</button></div>`,m=>{
@@ -1506,6 +1539,7 @@ function billModal(it,ym){
         if(m.querySelector('#bFwd').checked){monthsList().filter(x=>x>=ym).forEach(x=>{if(a)it.values[x]=a;else delete it.values[x]})}
         const differs=Math.abs(a-planned(it,ym))>.005;
         const bf=m.querySelector('#bFolha');if(bf){if(bf.checked){it.folha=true;if(!it.due)it.due=5}else delete it.folha}
+        const bp=m.querySelector('#bPayTo');if(bp){const v=bp.value.trim();if(v)it.payTo=v;else delete it.payTo}
         const k=ym+'|'+it.id,auto=autoPaid(it,ym);
         if(paid){if(auto&&!differs)delete S.status[k];else S.status[k]={paid:true,amount:differs?a:null,date:d||todayISO()}}
         else if(auto)S.status[k]={paid:false,manual:true,amount:differs?a:null,date:null};
@@ -1756,6 +1790,9 @@ document.addEventListener('click',e=>{
     case 'newIncome':incomeModal();break;
     case 'payoff':payoffModal(itemById(id));break;
     case 'quote':quoteModal(itemById(id));break;
+    case 'payToSend':{const who=el.dataset.who,ym=UI.month;snap();let tot=0;
+      byGroup('parcela').filter(i=>i.payTo===who&&planned(i,ym)>0&&!isPaid(i,ym)).forEach(i=>{const k=ym+'|'+i.id;const{manual,...r}=S.status[k]||{amount:null};S.status[k]={...r,paid:true,date:todayISO()};tot+=val(i,ym)});
+      save();render();toast('✓ '+fmt(tot)+' enviado para '+who,true);break}
     case 'resBank':resBankModal();break;
     case 'syncNow':sync();break;
     case 'install':if(installEvt){installEvt.prompt();installEvt.userChoice.finally(()=>{installEvt=null;$('#installBtn').style.display='none'})}break;
