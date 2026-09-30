@@ -1201,6 +1201,10 @@ function payToCards(){
   const ym=UI.month,groups={};
   byGroup('parcela').filter(i=>i.payTo).forEach(i=>(groups[i.payTo]=groups[i.payTo]||[]).push(i));
   return Object.entries(groups).map(([who,list])=>{
+    const cred=byGroup('receita').filter(i=>i.payFrom===who);
+    const credMon=cred.filter(i=>planned(i,ym)>0||st(i,ym));
+    const credTot=credMon.reduce((s,i)=>s+val(i,ym),0),credOpen=credMon.filter(i=>!isPaid(i,ym)).reduce((s,i)=>s+val(i,ym),0);
+    const credAll=cred.reduce((s,i)=>s+monthsList().filter(m=>planned(i,m)>0&&!isPaid(i,m)).reduce((a,m)=>a+val(i,m),0),0);
     const mon=list.filter(i=>planned(i,ym)>0||st(i,ym));
     const monTot=mon.reduce((s,i)=>s+val(i,ym),0),sent=mon.filter(i=>isPaid(i,ym));
     const sentTot=sent.reduce((s,i)=>s+val(i,ym),0);
@@ -1208,19 +1212,22 @@ function payToCards(){
     const owed=infos.reduce((s,x)=>s+x.d.remVal,0);
     const last=infos.map(x=>x.d.last).filter(Boolean).sort().pop();
     const nx=ymAdd(ym,1),nxTot=list.reduce((s,i)=>s+val(i,nx),0);
-    const all=sent.length===mon.length&&mon.length>0;
+    const all=sent.length===mon.length&&mon.length>0&&!credOpen;
+    const net=monTot-sentTot-credOpen;
     return `<div class="card span-12" style="border-color:#e0a030">
       <h3>💛 Repasse para ${esc(who)} <span class="right t2">${list.length} dívida${list.length!==1?'s':''} no nome dela</span></h3>
       <div class="grid2" style="gap:12px;margin-bottom:6px">
-        <div class="kpi span-4"><div class="k-lbl">Mandar em ${ymLong(ym)}</div><div class="k-val num">${fmt(monTot)}</div>
-          <div class="k-sub">${mon.length?(all?`<span class="pos" style="font-weight:700">✓ enviado</span>`:sent.length?`${fmt(sentTot)} já enviado · falta <b>${fmt(monTot-sentTot)}</b>`:'ainda não enviado'):'nada neste mês'}</div>
-          ${mon.length&&!all?`<button class="btn sm good" style="margin-top:8px" data-action="payToSend" data-who="${esc(who)}">✓ Marcar ${fmt(monTot-sentTot)} como enviado</button>`:''}</div>
-        <div class="kpi span-4"><div class="k-lbl">Devo no total para ${esc(who)}</div><div class="k-val num">${fmt(owed)}</div><div class="k-sub">parcelas ainda não enviadas, de todos os meses</div></div>
+        <div class="kpi span-4"><div class="k-lbl">Mandar em ${ymLong(ym)}${credTot?' (líquido)':''}</div><div class="k-val num">${fmt(monTot-credTot)}</div>
+          ${credTot?`<div class="k-sub">parcelas ${fmt(monTot)} − <b class="pos">${fmt(credTot)}</b> que ${esc(who)} te deve (${credMon.map(i=>esc(i.name.replace(new RegExp('^'+who+'\\s*[–-]\\s*'),''))).join(', ')})</div>`:''}
+          <div class="k-sub">${mon.length?(all?`<span class="pos" style="font-weight:700">✓ enviado</span>`:sent.length||credTot-credOpen?`${fmt(sentTot-(credTot-credOpen))} já acertado · falta <b>${fmt(net)}</b>`:'ainda não enviado'):'nada neste mês'}</div>
+          ${mon.length&&!all?`<button class="btn sm good" style="margin-top:8px" data-action="payToSend" data-who="${esc(who)}">✓ Marcar ${fmt(net)} como enviado</button>`:''}</div>
+        <div class="kpi span-4"><div class="k-lbl">Devo no total para ${esc(who)}</div><div class="k-val num">${fmt(owed-credAll)}</div><div class="k-sub">${credAll?`parcelas ${fmt(owed)} − ${fmt(credAll)} que ${esc(who)} te deve`:'parcelas ainda não enviadas, de todos os meses'}</div></div>
         <div class="kpi span-4"><div class="k-lbl">Último repasse</div><div class="k-val">${last?ymLong(last):'—'}</div><div class="k-sub">${last?'faltam '+Math.max(0,monthsDiff(ym,last)+1)+' meses (contando este) · próximo mês: '+fmt(nxTot):''}</div></div>
       </div>
       <div style="overflow:auto"><table class="items num"><thead><tr><th>Dívida</th><th style="text-align:right">${ymLabel(ym)}</th><th style="text-align:right">Restante</th><th style="text-align:right">Termina</th></tr></thead><tbody>
         ${infos.sort((a,b)=>(a.d.last||'').localeCompare(b.d.last||'')).map(({i,d})=>`<tr><td>${isPaid(i,ym)?'✓ ':''}${esc(i.name)}</td><td style="text-align:right" class="${isPaid(i,ym)?'pos':planned(i,ym)?'':'muted'}">${planned(i,ym)||st(i,ym)?fmt(val(i,ym)):'–'}</td><td style="text-align:right">${d.remVal?fmt(d.remVal):'<span class="pos">quitada</span>'}</td><td style="text-align:right" class="t2">${d.last?ymLabel(d.last):'–'}</td></tr>`).join('')}
-        <tr style="font-weight:700"><td>Total</td><td style="text-align:right">${fmt(monTot)}</td><td style="text-align:right">${fmt(owed)}</td><td></td></tr>
+        ${cred.map(i=>{const rest=monthsList().filter(m=>planned(i,m)>0&&!isPaid(i,m));return`<tr class="pos"><td>${isPaid(i,ym)?'✓ ':''}${esc(i.name)}</td><td style="text-align:right">${planned(i,ym)?'− '+fmt(val(i,ym)):'–'}</td><td style="text-align:right">${rest.length?'− '+fmt(rest.reduce((a,m)=>a+val(i,m),0)):'recebido'}</td><td style="text-align:right" class="t2">${rest.length?ymLabel(rest[rest.length-1]):'–'}</td></tr>`}).join('')}
+        <tr style="font-weight:700"><td>Total</td><td style="text-align:right">${fmt(monTot-credTot)}</td><td style="text-align:right">${fmt(owed-credAll)}</td><td></td></tr>
       </tbody></table></div>
     </div>`;
   }).join('');
@@ -1792,6 +1799,7 @@ document.addEventListener('click',e=>{
     case 'quote':quoteModal(itemById(id));break;
     case 'payToSend':{const who=el.dataset.who,ym=UI.month;snap();let tot=0;
       byGroup('parcela').filter(i=>i.payTo===who&&planned(i,ym)>0&&!isPaid(i,ym)).forEach(i=>{const k=ym+'|'+i.id;const{manual,...r}=S.status[k]||{amount:null};S.status[k]={...r,paid:true,date:todayISO()};tot+=val(i,ym)});
+      byGroup('receita').filter(i=>i.payFrom===who&&planned(i,ym)>0&&!isPaid(i,ym)).forEach(i=>{const k=ym+'|'+i.id;S.status[k]={...(S.status[k]||{amount:null}),paid:true,date:todayISO()};tot-=val(i,ym)});
       save();render();toast('✓ '+fmt(tot)+' enviado para '+who,true);break}
     case 'resBank':resBankModal();break;
     case 'syncNow':sync();break;
