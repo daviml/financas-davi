@@ -255,6 +255,63 @@ table.items input:focus{border-color:var(--accent);outline:0;background:var(--su
 .banner.info{background:var(--accent-soft);color:var(--text)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media (max-width:600px){.two{grid-template-columns:1fr}.kpi .k-val{font-size:22px}}
+
+/* barra de navegação inferior (só no celular) */
+nav.bottom{display:none}
+.more-sheet{display:none}
+.st-ic{font-style:normal}
+@media (max-width:640px){
+  body{font-size:15px}
+  .top-in{padding:8px 12px;gap:8px;flex-wrap:nowrap}
+  .brand{margin-right:0;font-size:0;gap:0}
+  .brand .dot{width:34px;height:34px;border-radius:10px;font-size:14px}
+  .monthnav{flex:1;justify-content:space-between;padding:2px}
+  .monthnav button{width:38px;height:38px;font-size:20px}
+  .monthnav .lbl{min-width:0;flex:1;font-size:15px}
+  .monthnav .lbl small{font-size:10.5px;margin-top:2px}
+  .savestate{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-size:16px;background:var(--surface-2);flex:none}
+  .savestate .st-txt{display:none}
+  #themeBtn,#installBtn{display:none!important}
+  nav.tabs{display:none}
+  main{padding:14px 12px calc(150px + env(safe-area-inset-bottom))}
+  h2.title{font-size:19px}
+  .grid2{gap:10px}
+  .card{padding:14px;border-radius:14px}
+  .card h3{font-size:15px;margin-bottom:10px}
+
+  /* resumo do mês compacto */
+  .kpi.hero{grid-column:span 12;padding:16px 16px 14px}
+  .kpi.hero .k-val{font-size:32px}
+  .kpi-rec,.kpi-out{grid-column:span 6!important;padding:12px}
+  .kpi-rec .k-val,.kpi-out .k-val{font-size:18px}
+  .kpi-rec .k-lbl,.kpi-out .k-lbl{font-size:12px}
+  .kpi-rec .k-sub,.kpi-out .k-sub{font-size:11.5px}
+  .kpi-bills{grid-column:span 12!important;padding:12px 14px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:0 12px}
+  .kpi-bills .k-lbl{grid-column:1;grid-row:1;font-size:12px}
+  .kpi-bills .k-val{grid-column:1;grid-row:2;font-size:20px;margin:0}
+  .kpi-bills .pbar{grid-column:2;grid-row:1 / span 2;margin:0}
+  .kpi-bills .k-sub{grid-column:3;grid-row:1 / span 2;text-align:right;font-size:12px;margin:0}
+
+  .cat{grid-template-columns:26px 1fr auto;gap:4px 8px}
+  .bill{padding:10px}
+  .bill .edit{width:34px;height:34px}
+  .tx{padding:10px 6px}
+  .legend{font-size:13px}
+
+  nav.bottom{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:45;background:var(--surface);border-top:1px solid var(--border);padding:4px 4px calc(4px + env(safe-area-inset-bottom));box-shadow:0 -4px 16px rgba(0,0,0,.12)}
+  nav.bottom button{flex:1;border:0;background:transparent;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0 4px;font-size:11px;font-weight:600;cursor:pointer;border-radius:10px}
+  nav.bottom button .i{font-size:21px;line-height:1.1;filter:grayscale(1);opacity:.75}
+  nav.bottom button.on{color:var(--accent)}
+  nav.bottom button.on .i{filter:none;opacity:1}
+  .fab{right:16px;bottom:calc(76px + env(safe-area-inset-bottom));width:60px;height:60px;padding:0;border-radius:18px;justify-content:center;font-size:0}
+  .fab span{font-size:34px;margin:0}
+  #toast{bottom:calc(150px + env(safe-area-inset-bottom));left:12px;right:12px;transform:none;max-width:none;justify-content:space-between}
+  p.sub{font-size:13px;margin-bottom:12px}
+  .more-sheet.open{display:block;position:fixed;left:10px;right:10px;bottom:calc(72px + env(safe-area-inset-bottom));z-index:46;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.35);padding:6px}
+  .more-sheet button{display:flex;width:100%;align-items:center;gap:12px;border:0;background:transparent;padding:14px 12px;font-size:15px;font-weight:600;border-radius:10px;cursor:pointer;text-align:left}
+  .more-sheet button:active,.more-sheet button.on{background:var(--surface-2)}
+  .more-sheet button span{font-size:20px;width:26px;text-align:center}
+}
 </style>
 </head>
 <body>
@@ -284,6 +341,20 @@ table.items input:focus{border-color:var(--accent);outline:0;background:var(--su
 <main id="view"></main>
 
 <button class="fab" data-action="addTx" title="Novo gasto (atalho: N)"><span>+</span> Novo gasto <kbd>N</kbd></button>
+
+<nav class="bottom" id="bottomNav">
+  <button data-tab="inicio"><span class="i">🏠</span>Início</button>
+  <button data-tab="lanc"><span class="i">🧾</span>Gastos</button>
+  <button data-tab="contas"><span class="i">✅</span>Contas</button>
+  <button data-tab="reserva"><span class="i">🐷</span>Reserva</button>
+  <button data-more="1"><span class="i">☰</span>Mais</button>
+</nav>
+<div class="more-sheet" id="moreSheet">
+  <button data-tab="orc"><span>📊</span>Orçamento (planilha)</button>
+  <button data-tab="dividas"><span>💳</span>Dívidas</button>
+  <button data-tab="ajustes"><span>⚙️</span>Ajustes, backup e sincronização</button>
+  <button data-action="theme"><span>◐</span>Trocar tema claro/escuro</button>
+</div>
 
 <dialog id="modal"><div id="modalIn"></div></dialog>
 <div id="tip"></div>
@@ -396,13 +467,15 @@ function setSaveState(msg){
   if(msg){el.textContent=msg;return}
   if(syncCfg){
     const t=lastSyncAt?new Date(lastSyncAt).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'';
-    el.innerHTML={busy:'⟳ sincronizando…',ok:'☁ sincronizado '+t,error:'<span class="neg">⚠ erro ao sincronizar</span>',offline:'⚠ sem internet · salvo no aparelho',off:'☁ aguardando…'}[syncState]||'';
-    el.title=syncState==='error'?syncErr:'Clique para sincronizar agora';
+    const st={busy:['⟳','sincronizando…'],ok:['☁️','sincronizado '+t],error:['⚠️','<span class="neg">erro ao sincronizar</span>'],offline:['📴','sem internet · salvo no aparelho'],off:['☁️','aguardando…']}[syncState]||['',''];
+    el.innerHTML=`<i class="st-ic">${st[0]}</i><span class="st-txt"> ${st[1]}</span>`;
+    el.title=syncState==='error'?syncErr:(syncState==='ok'?'Sincronizado '+t+' · toque para sincronizar agora':'Toque para sincronizar agora');
     el.style.cursor='pointer';
     return;
   }
   el.style.cursor='';el.title='';
-  el.textContent=fileHandle?(fileNeedsPermission?'⚠ backup desconectado':'✓ salvo + backup em arquivo'):'✓ salvo no navegador';
+  const t2=fileHandle?(fileNeedsPermission?['⚠️','backup desconectado']:['✓','salvo + backup em arquivo']):['💾','salvo no navegador'];
+  el.innerHTML=`<i class="st-ic">${t2[0]}</i><span class="st-txt"> ${t2[1]}</span>`;el.title=t2[1];
 }
 
 /* ---------- Versões por registro (para juntar dados de vários aparelhos) ---------- */
@@ -715,7 +788,9 @@ function barChart(el,{labels,values,height=220,color='var(--s1)',yFmt=fmt,tip,hi
    Telas
    ========================================================= */
 function render(){
-  document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===UI.tab));
+  document.querySelectorAll('#tabs button,#bottomNav button[data-tab],#moreSheet button[data-tab]').forEach(b=>b.classList.toggle('on',b.dataset.tab===UI.tab));
+  $('#bottomNav [data-more]').classList.toggle('on',['orc','dividas','ajustes'].includes(UI.tab));
+  $('#moreSheet').classList.remove('open');
   $('#mLbl').textContent=ymLong(UI.month);
   $('#mSub').textContent=UI.month===todayYM()?'mês atual':(UI.month<todayYM()?'mês passado':'planejamento');
   if(location.hash!=='#'+UI.tab)history.replaceState(null,'','#'+UI.tab);
@@ -759,17 +834,17 @@ function vInicio(){
       <div class="k-val num ${c.sobra<0?'neg':''}">${fmt(c.sobra)}</div>
       <div class="k-sub">Depois da reserva: <b class="num">${fmt(c.livre)}</b></div>
     </div>
-    <div class="card kpi span-3">
+    <div class="card kpi span-3 kpi-rec">
       <div class="k-lbl">Receitas do mês</div>
       <div class="k-val num">${fmt(c.receita)}</div>
       <div class="k-sub">${byGroup('receita').filter(i=>isPaid(i,ym)).length?'recebido: '+fmt(byGroup('receita').filter(i=>isPaid(i,ym)).reduce((s,i)=>s+val(i,ym),0)):'nada recebido ainda'}</div>
     </div>
-    <div class="card kpi span-3">
-      <div class="k-lbl">Já saiu · falta sair</div>
+    <div class="card kpi span-3 kpi-out">
+      <div class="k-lbl">Já saiu</div>
       <div class="k-val num">${fmt(c.jaSaiu)}</div>
-      <div class="k-sub">Falta: <b class="num">${fmt(c.vaiSair)}</b> de ${fmt(c.saidas)} previstos</div>
+      <div class="k-sub">falta sair <b class="num">${fmt(c.vaiSair)}</b></div>
     </div>
-    <div class="card kpi span-3" style="cursor:pointer" data-action="tab" data-tab="contas">
+    <div class="card kpi span-3 kpi-bills" style="cursor:pointer" data-action="tab" data-tab="contas">
       <div class="k-lbl">Contas pagas</div>
       <div class="k-val num">${nPaid} <span class="muted" style="font-size:16px">de ${c.bills.length}</span></div>
       <div class="pbar"><i style="width:${c.bills.length?nPaid/c.bills.length*100:0}%"></i></div>
@@ -1436,7 +1511,9 @@ function togglePaid(it,ym){
 
 document.addEventListener('click',e=>{
   if(e.target.closest('[data-close]')){closeModal();return}
-  const tabB=e.target.closest('#tabs [data-tab]');
+  if(e.target.closest('#bottomNav [data-more]')){$('#moreSheet').classList.toggle('open');return}
+  if(!e.target.closest('#moreSheet'))$('#moreSheet').classList.remove('open');
+  const tabB=e.target.closest('#tabs [data-tab],#bottomNav [data-tab],#moreSheet [data-tab]');
   if(tabB){UI.tab=tabB.dataset.tab;render();scrollTo(0,0);return}
   const el=e.target.closest('[data-action]');if(!el)return;
   const a=el.dataset.action,id=el.dataset.id,m=el.dataset.m;
