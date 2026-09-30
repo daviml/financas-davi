@@ -1572,7 +1572,8 @@ function quoteModal(it){
       </div>
       <label class="f">Esse valor quita as parcelas a partir de</label>
       <select class="in" id="qFrom">${un.map((m,k)=>`<option value="${m}" ${it.quote&&it.quote.from===m?'selected':''}>${ymLong(m)} · ${un.length-k} parcela${un.length-k!==1?'s':''}</option>`).join('')}</select>
-      <div class="hint">Se a parcela deste mês já vai ser descontada e não entra na quitação, escolha o mês seguinte (e marque a deste mês como paga quando descontar).</div>
+      <div class="hint">Escolha a primeira parcela que o valor de quitação cobre. As anteriores (já descontadas ou pagas) não entram.</div>
+      <label class="check" id="qPrevWrap" style="display:none"><input type="checkbox" id="qPrev" checked> <span id="qPrevTxt"></span></label>
       <label class="check"><input type="checkbox" id="qAll" ${S.settings.consigRate==null||S.settings.consigRateFrom===it.id?'checked':''}> Usar esta taxa como estimativa para os outros consignados que ainda não têm valor informado</label>
       <div class="banner info" id="qRes" style="margin-top:12px"></div>
     </div>
@@ -1584,12 +1585,13 @@ function quoteModal(it){
         const nom=ms.reduce((s,x)=>s+val(it,x),0),a=parseMoney(q('#qVal').value);
         return{r:solveRate(tmp,ms,a),ms,nom,a,tmp};
       };
-      const upd=()=>{const c=calcR();q('#qRes').innerHTML=c.a>0?(c.a>=c.nom?'O valor é igual ou maior que a soma das parcelas — sem desconto de juros.':`${c.ms.length} parcelas somam ${fmt(c.nom)} · você economiza <b class="pos">${fmt(c.nom-c.a)}</b> quitando hoje.<br>Juros do contrato ≈ <b>${pctRate(c.r)}</b> (${((Math.pow(1+c.r,12)-1)*100).toLocaleString('pt-BR',{maximumFractionDigits:1})}% ao ano).`):'Digite o valor de quitação.'};
+      const upd=()=>{const prev=un.filter(x=>x<q('#qFrom').value);q('#qPrevWrap').style.display=prev.length?'':'none';q('#qPrevTxt').textContent=prev.length?`Marcar ${prev.length===1?'a parcela de '+ymLabel(prev[0]):'as '+prev.length+' parcelas de '+ymLabel(prev[0])+' a '+ymLabel(prev[prev.length-1])} como paga${prev.length>1?'s':''} (não entra${prev.length>1?'m':''} na quitação)`:'';const c=calcR();q('#qRes').innerHTML=c.a>0?(c.a>=c.nom?'O valor é igual ou maior que a soma das parcelas — sem desconto de juros.':`${c.ms.length} parcelas somam ${fmt(c.nom)} · você economiza <b class="pos">${fmt(c.nom-c.a)}</b> quitando hoje.<br>Juros do contrato ≈ <b>${pctRate(c.r)}</b> (${((Math.pow(1+c.r,12)-1)*100).toLocaleString('pt-BR',{maximumFractionDigits:1})}% ao ano).`):'Digite o valor de quitação.'};
       ['#qVal','#qDue'].forEach(x=>q(x).addEventListener('input',upd));q('#qFrom').addEventListener('change',upd);upd();
       q('#qSave').onclick=()=>{
         const c=calcR();if(!(c.a>0)){q('#qVal').focus();return}
         snap();
         it.due=c.tmp.due||null;it.rate=c.r;it.quote={amount:c.a,date:todayISO(),from:q('#qFrom').value};
+        if(q('#qPrev').checked)un.filter(x=>x<q('#qFrom').value).forEach(x=>{const k=x+'|'+it.id;S.status[k]={...(S.status[k]||{amount:null}),paid:true,date:S.status[k]?.date||todayISO()}});
         if(q('#qAll').checked){S.settings.consigRate=c.r;S.settings.consigRateFrom=it.id}
         save();closeModal();render();toast('Juros de '+pctRate(c.r)+' salvos para '+it.name,true);
       };
