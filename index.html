@@ -1211,14 +1211,14 @@ function payToCards(){
     const infos=list.map(i=>({i,d:debtInfo(i)}));
     const owed=infos.reduce((s,x)=>s+x.d.remVal,0);
     const last=infos.map(x=>x.d.last).filter(Boolean).sort().pop();
-    const nx=ymAdd(ym,1),nxTot=list.reduce((s,i)=>s+val(i,nx),0);
+    const nx=ymAdd(ym,1),nxTot=list.reduce((s,i)=>s+val(i,nx),0)-byGroup('receita').filter(i=>i.payFrom===who).reduce((s,i)=>s+val(i,nx),0);
     const all=sent.length===mon.length&&mon.length>0&&!credOpen;
     const net=monTot-sentTot-credOpen;
     return `<div class="card span-12" style="border-color:#e0a030">
       <h3>💛 Repasse para ${esc(who)} <span class="right t2">${list.length} dívida${list.length!==1?'s':''} no nome dela</span></h3>
       <div class="grid2" style="gap:12px;margin-bottom:6px">
         <div class="kpi span-4"><div class="k-lbl">Mandar em ${ymLong(ym)}${credTot?' (líquido)':''}</div><div class="k-val num">${fmt(monTot-credTot)}</div>
-          ${credTot?`<div class="k-sub">parcelas ${fmt(monTot)} − <b class="pos">${fmt(credTot)}</b> que ${esc(who)} te deve (${credMon.map(i=>esc(i.name.replace(new RegExp('^'+who+'\\s*[–-]\\s*'),''))).join(', ')})</div>`:''}
+          ${credTot?`<div class="k-sub">parcelas ${fmt(monTot)} − <b class="pos">${fmt(credTot)}</b> que ${esc(who)} te deve (${credMon.map(i=>esc(i.name.replace(new RegExp('^'+who+'\\s*[–-]\\s*'),'').replace(/\s*\(.*\)\s*$/,''))).join(', ')})</div>`:''}
           <div class="k-sub">${mon.length?(all?`<span class="pos" style="font-weight:700">✓ enviado</span>`:sent.length||credTot-credOpen?`${fmt(sentTot-(credTot-credOpen))} já acertado · falta <b>${fmt(net)}</b>`:'ainda não enviado'):'nada neste mês'}</div>
           ${mon.length&&!all?`<button class="btn sm good" style="margin-top:8px" data-action="payToSend" data-who="${esc(who)}">✓ Marcar ${fmt(net)} como enviado</button>`:''}</div>
         <div class="kpi span-4"><div class="k-lbl">Devo no total para ${esc(who)}</div><div class="k-val num">${fmt(owed-credAll)}</div><div class="k-sub">${credAll?`parcelas ${fmt(owed)} − ${fmt(credAll)} que ${esc(who)} te deve`:'parcelas ainda não enviadas, de todos os meses'}</div></div>
