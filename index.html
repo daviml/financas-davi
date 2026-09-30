@@ -875,6 +875,7 @@ function vInicio(){
       <div class="k-lbl">Receitas do mês</div>
       <div class="k-val num">${fmt(c.receita)}</div>
       <div class="k-sub">${byGroup('receita').filter(i=>isPaid(i,ym)).length?'recebido: '+fmt(byGroup('receita').filter(i=>isPaid(i,ym)).reduce((s,i)=>s+val(i,ym),0)):'nada recebido ainda'}</div>
+      <div style="margin-top:6px;display:flex;gap:12px;flex-wrap:wrap"><button class="link" data-action="newIncome">+ entrada extra</button><button class="link" data-action="tab" data-tab="contas">✎ ajustar valores</button></div>
     </div>
     <div class="card kpi span-3 kpi-out">
       <div class="k-lbl">Já saiu</div>
@@ -1014,7 +1015,8 @@ function vContas(){
     <div class="card span-4">
       <h3>💰 Entradas</h3>
       ${byGroup('receita').filter(i=>planned(i,ym)>0||st(i,ym)).map(i=>billRow(i,ym,true)).join('')||'<div class="empty">Sem entradas previstas.</div>'}
-      <div class="hint">Marque quando o dinheiro cair na conta.</div>
+      <button class="btn sm" data-action="newIncome" style="margin-top:4px">+ Entrada extra neste mês</button>
+      <div class="hint">Marque quando o dinheiro cair na conta. Para mudar o valor do salário deste mês, toque no ✎ dele.</div>
       <h3 style="margin-top:18px">📌 Resumo</h3>
       <div class="legend">
         <div>Receitas</div><div></div><div class="num" style="text-align:right">${fmt(c.receita)}</div>
@@ -1124,7 +1126,7 @@ vOrc.after=()=>{
 /* ---------- Dívidas ---------- */
 function vDividas(){
   const ms=monthsList();
-  const debts=byGroup('parcela').map(i=>({i,d:debtInfo(i)})).filter(x=>x.d.total>0);
+  const debts=byGroup('parcela').map(i=>({i,d:debtInfo(i)})).filter(x=>x.d.total>0||(x.i.payoffs||[]).length);
   const active=debts.filter(x=>x.d.remaining>0).sort((a,b)=>a.d.last.localeCompare(b.d.last));
   const done=debts.filter(x=>x.d.remaining===0);
   const remTotal=active.reduce((s,x)=>s+x.d.remVal,0);
@@ -1159,7 +1161,8 @@ function debtRow(i,d){
   return `<div class="debt ${d.remaining===0?'done':''}">
     <div class="row1"><span class="nm">${esc(i.name)}</span><span class="num"><b>${fmt(d.remVal)}</b> <span class="muted">restante</span></span></div>
     <div class="pbar" style="height:8px"><i style="width:${pct*100}%"></i></div>
-    <div class="meta"><span>${d.paid} de ${d.total} pagas</span><span>parcela ${fmt(d.parcela)}</span><span>termina em ${ymLabel(d.last)}</span>${d.nextUnpaid?`<span>próxima: ${ymLabel(d.nextUnpaid)}</span>`:''}</div>
+    <div class="meta"><span>${d.paid} de ${d.total} pagas</span><span>parcela ${fmt(d.parcela)}</span>${d.last?`<span>termina em ${ymLabel(d.last)}</span>`:''}${d.nextUnpaid?`<span>próxima: ${ymLabel(d.nextUnpaid)}</span>`:''}${d.remaining>0?`<button class="link" data-action="payoff" data-id="${i.id}" style="margin-left:auto">💸 quitar / amortizar</button>`:''}</div>
+    ${(i.payoffs||[]).map(po=>`<div class="meta" style="color:var(--paid-ink)">✓ ${po.mode==='total'?'Quitada':'Amortizada'} em ${dmy(po.date)}/${po.date.slice(2,4)} com ${fmt(po.amount)} · ${po.removed} parcela${po.removed!==1?'s':''} a menos${po.saved>0.005?' · economia de '+fmt(po.saved):''}</div>`).join('')}
   </div>`;
 }
 vDividas.after=()=>{
@@ -1499,6 +1502,100 @@ function resBankModal(){
     });
 }
 
+function incomeModal(){
+  openModal(`
+    <div class="m-hd"><h3>Entrada extra</h3><button class="x" data-close>×</button></div>
+    <div class="m-bd">
+      <label class="f">De onde veio</label><input class="in" id="inName" placeholder="Ex.: freela, venda, reembolso, bônus, Pix de alguém…" list="incList">
+      <datalist id="incList">${[...new Set(byGroup('receita').filter(i=>!i.salary).map(i=>i.name))].map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
+      <div class="two">
+        <div><label class="f">Valor</label><input class="in num amount-in" id="inVal" inputmode="decimal" placeholder="R$ 0,00" style="font-size:24px!important;height:48px!important"></div>
+        <div><label class="f">Mês</label><select class="in" id="inMonth">${monthsList().map(m=>`<option value="${m}" ${m===UI.month?'selected':''}>${ymLong(m)}</option>`).join('')}</select></div>
+      </div>
+      <label class="check"><input type="checkbox" id="inPaid" checked> Já recebi</label>
+      <div class="hint">Entra na receita e na sobra do mês. Para uma renda que se repete todo mês, use Ajustes → Novo item (grupo Receitas).</div>
+    </div>
+    <div class="m-ft"><button class="btn" data-close>Cancelar</button><button class="btn primary" id="inSave">Adicionar</button></div>`,m=>{
+      setTimeout(()=>m.querySelector('#inName').focus(),30);
+      const doSave=()=>{
+        const name=m.querySelector('#inName').value.trim()||'Entrada extra',v=parseMoney(m.querySelector('#inVal').value),ym=m.querySelector('#inMonth').value;
+        if(!(v>0)){m.querySelector('#inVal').focus();return}
+        snap();
+        const it={id:uid(),name,group:'receita',values:{[ym]:v},due:null,icon:'',extra:true};
+        S.items.push(it);
+        if(m.querySelector('#inPaid').checked)S.status[ym+'|'+it.id]={paid:true,amount:null,date:ym===todayYM()?todayISO():ym+'-01'};
+        save();closeModal();render();toast('Entrada de '+fmt(v)+' adicionada em '+ymLabel(ym),true);
+      };
+      m.querySelector('#inSave').onclick=doSave;
+      m.querySelectorAll('.m-bd input').forEach(i=>i.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();doSave()}}));
+    });
+}
+
+function payoffModal(it){
+  const d=debtInfo(it);
+  const unpaid=d.ms.filter(m=>!isPaid(it,m));
+  const nominal=unpaid.reduce((s,m)=>s+val(it,m),0);
+  openModal(`
+    <div class="m-hd"><h3>Quitar / amortizar · ${esc(it.name)}</h3><button class="x" data-close>×</button></div>
+    <div class="m-bd">
+      <div class="banner info" style="margin:6px 0 4px">Faltam <b>${unpaid.length}</b> parcela${unpaid.length!==1?'s':''} de ${fmt(d.parcela)} (${ymLabel(unpaid[0])} a ${ymLabel(unpaid[unpaid.length-1])}) = <b>${fmt(nominal)}</b> sem desconto.</div>
+      <div class="chips" id="poMode" style="margin-top:10px">
+        <button class="chip on" data-v="total">Quitação total</button>
+        <button class="chip" data-v="partial">Amortização (algumas parcelas)</button>
+      </div>
+      <div class="two">
+        <div><label class="f">Valor que você pagou</label><input class="in num" id="poVal" inputmode="decimal" placeholder="0,00"></div>
+        <div><label class="f">Data do pagamento</label><input class="in" type="date" id="poDate" value="${todayISO()}"></div>
+      </div>
+      <div id="poPartial" style="display:none">
+        <label class="f">Quantas parcelas o banco abateu?</label>
+        <input class="in" id="poN" type="number" min="1" max="${unpaid.length}" value="1">
+        <div class="hint">Saem as últimas parcelas do contrato (o fim fica mais cedo; o valor da parcela continua igual).</div>
+      </div>
+      <div id="poPlanWrap"></div>
+      <div class="hint" id="poHint"></div>
+    </div>
+    <div class="m-ft"><button class="btn" data-close>Cancelar</button><button class="btn good" id="poSave">Registrar pagamento</button></div>`,m=>{
+      let mode='total';
+      const q=x=>m.querySelector(x);
+      setTimeout(()=>q('#poVal').focus(),30);
+      const payMonth=()=>clampMonth((q('#poDate').value||todayISO()).slice(0,7));
+      const plannedQ=()=>{const pm=payMonth();return byGroup('quitacao').filter(i=>!i.payoffOf&&planned(i,pm)>0&&!isPaid(i,pm))};
+      const removed=()=>{
+        const pm=payMonth();
+        if(mode==='total')return unpaid.filter(x=>x>=pm);
+        const n=Math.max(1,Math.min(unpaid.length,parseInt(q('#poN').value)||1));
+        return unpaid.slice(-n);
+      };
+      const upd=()=>{
+        q('#poPartial').style.display=mode==='partial'?'':'none';
+        const pq=plannedQ(),pm=payMonth();
+        q('#poPlanWrap').innerHTML=pq.length?`<label class="check"><input type="checkbox" id="poUsePlan" checked> Usar a quitação já planejada de ${ymLabel(pm)} (${fmt(pq.reduce((s,i)=>s+planned(i,pm),0))}) — ela é trocada por este pagamento</label>`:'';
+        const r=removed(),a=parseMoney(q('#poVal').value),nom=r.reduce((s,x)=>s+val(it,x),0);
+        const before=unpaid.filter(x=>x<pm&&!r.includes(x));
+        q('#poHint').innerHTML=r.length?`Saem <b>${r.length}</b> parcela${r.length!==1?'s':''} (${ymLabel(r[0])}${r.length>1?' a '+ymLabel(r[r.length-1]):''}), que somam ${fmt(nom)}.`+(a>0?` ${a<nom?'Economia de <b class="pos">'+fmt(nom-a)+'</b> em juros.':''}`:'')+(mode==='total'&&before.length?`<br>⚠ ${before.length} parcela(s) antes de ${ymLabel(pm)} ainda não foram marcadas como pagas e continuam no plano.`:''):'Nenhuma parcela a partir dessa data.';
+      };
+      q('#poMode').onclick=e=>{const b=e.target.closest('[data-v]');if(!b)return;mode=b.dataset.v;q('#poMode').querySelectorAll('.chip').forEach(c=>c.classList.toggle('on',c===b));upd()};
+      ['#poVal','#poN'].forEach(x=>q(x).addEventListener('input',upd));q('#poDate').addEventListener('change',upd);upd();
+      q('#poSave').onclick=()=>{
+        const a=parseMoney(q('#poVal').value),r=removed(),date=q('#poDate').value||todayISO(),pm=payMonth();
+        if(!(a>0)){q('#poVal').focus();q('#poVal').style.outline='2px solid var(--bad)';return}
+        if(!r.length){alert('Não há parcelas para remover a partir dessa data.');return}
+        const nom=r.reduce((s,x)=>s+val(it,x),0);
+        if(!confirm(`Registrar ${mode==='total'?'quitação':'amortização'} de ${fmt(a)} e tirar ${r.length} parcela(s) de “${it.name}” do plano?`))return;
+        snap();
+        r.forEach(x=>{delete it.values[x];delete S.status[x+'|'+it.id]});
+        const usePlan=q('#poUsePlan')&&q('#poUsePlan').checked;
+        if(usePlan)plannedQ().forEach(i=>{delete i.values[pm]});
+        const qi={id:uid(),name:'Quitação – '+it.name,group:'quitacao',values:{[pm]:a},due:null,icon:'',payoffOf:it.id};
+        S.items.push(qi);S.status[pm+'|'+qi.id]={paid:true,amount:null,date};
+        it.payoffs=[...(it.payoffs||[]),{date,amount:a,removed:r.length,mode,saved:round2(nom-a)}];
+        save();closeModal();render();
+        toast(`✓ ${mode==='total'?'Quitada':'Amortizada'}: ${r.length} parcela(s) a menos`,true);
+      };
+    });
+}
+
 function newBillModal(){
   openModal(`
     <div class="m-hd"><h3>Conta avulsa em ${ymLong(UI.month)}</h3><button class="x" data-close>×</button></div>
@@ -1569,6 +1666,8 @@ document.addEventListener('click',e=>{
     case 'editBill':e.stopPropagation();billModal(itemById(id),m);break;
     case 'cell':cellModal(itemById(id),m);break;
     case 'newBill':newBillModal();break;
+    case 'newIncome':incomeModal();break;
+    case 'payoff':payoffModal(itemById(id));break;
     case 'resBank':resBankModal();break;
     case 'syncNow':sync();break;
     case 'install':if(installEvt){installEvt.prompt();installEvt.userChoice.finally(()=>{installEvt=null;$('#installBtn').style.display='none'})}break;
