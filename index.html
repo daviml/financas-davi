@@ -751,6 +751,31 @@ function dueInfo(it,ym){
   if(diff<=3)return{cls:'soon',text:'Vence em '+diff+(diff===1?' dia':' dias')+' ('+dmy(dueISO)+')',diff};
   return{cls:'',text:'Vence dia '+dmy(dueISO),diff};
 }
+// Valor à vista: cada parcela em aberto é trazida para hoje pela taxa de juros do contrato,
+// contando os dias até o vencimento (como o banco faz na quitação antecipada).
+const isConsig=it=>it.group==='parcela'&&(/consignado/i.test(it.name)||!!it.consig);
+function debtRate(it){
+  if(it.rate!=null)return{r:it.rate,src:'quote'};
+  if(isConsig(it)&&S.settings.consigRate!=null)return{r:S.settings.consigRate,src:'est'};
+  return null;
+}
+function parcelK(it,m){const d=Math.min(it.due||1,dim(m));return Math.max(0,daysBetween(todayISO(),m+'-'+pad(d))/30.4375)}
+const pvOf=(it,months,r)=>months.reduce((s,m)=>s+val(it,m)/Math.pow(1+r,parcelK(it,m)),0);
+function solveRate(it,months,target){
+  const nom=months.reduce((s,m)=>s+val(it,m),0);
+  if(!(target>0)||target>=nom)return 0;
+  let lo=0,hi=1;
+  for(let k=0;k<100;k++){const mid=(lo+hi)/2;if(pvOf(it,months,mid)>target)lo=mid;else hi=mid}
+  return(lo+hi)/2;
+}
+function debtCash(it){
+  const un=monthsList().filter(m=>planned(it,m)>0&&!isPaid(it,m));
+  const nom=un.reduce((s,m)=>s+val(it,m),0);
+  const R=debtRate(it);
+  if(!R)return{cash:nom,nom,rate:null,src:null};
+  return{cash:round2(pvOf(it,un,R.r)),nom,rate:R.r,src:R.src};
+}
+const pctRate=r=>(r*100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'% a.m.';
 function debtInfo(it){
   const ms=monthsList().filter(m=>planned(it,m)>0);
   const paid=ms.filter(m=>isPaid(it,m));
@@ -1130,6 +1155,9 @@ function vDividas(){
   const active=debts.filter(x=>x.d.remaining>0).sort((a,b)=>a.d.last.localeCompare(b.d.last));
   const done=debts.filter(x=>x.d.remaining===0);
   const remTotal=active.reduce((s,x)=>s+x.d.remVal,0);
+  const cashTotal=active.reduce((s,x)=>s+debtCash(x.i).cash,0);
+  const consigAct=active.filter(x=>isConsig(x.i));
+  const anyEst=consigAct.some(x=>debtCash(x.i).src==='est');
   const lastAny=debts.reduce((m,x)=>x.d.last>m?x.d.last:m,'');
   const freeMonth=lastAny?ymAdd(lastAny,1):null;
   const cur=calc(UI.month);
@@ -1137,9 +1165,10 @@ function vDividas(){
   <h2 class="title">Dívidas e parcelas</h2>
   <p class="sub">Acompanhe quanto falta e quando cada parcela termina. As parcelas pagas são as que você marca em “Contas do mês”.</p>
   <div class="grid2">
-    <div class="card kpi hero span-4"><div class="k-lbl">Falta pagar (no plano)</div><div class="k-val num">${fmt(remTotal)}</div><div class="k-sub">${active.length} dívida${active.length!==1?'s':''} ativa${active.length!==1?'s':''}</div></div>
-    <div class="card kpi span-4"><div class="k-lbl">Livre de parcelas em</div><div class="k-val">${freeMonth?ymLong(freeMonth):'—'}</div><div class="k-sub">${freeMonth?'faltam '+Math.max(0,monthsDiff(todayYM(),freeMonth))+' meses':''}</div></div>
-    <div class="card kpi span-4"><div class="k-lbl">Parcelas em ${ymLong(UI.month)}</div><div class="k-val num">${fmt(cur.parcelas)}</div><div class="k-sub">${pct(cur.pctParc)} do salário</div></div>
+    <div class="card kpi hero span-3"><div class="k-lbl">Falta pagar (no plano)</div><div class="k-val num">${fmt(remTotal)}</div><div class="k-sub">${active.length} dívida${active.length!==1?'s':''} ativa${active.length!==1?'s':''}</div></div>
+    <div class="card kpi span-3" style="border-color:var(--paid-strong)"><div class="k-lbl">Falta pagar (à vista)</div><div class="k-val num pos">${fmt(cashTotal)}</div><div class="k-sub">quitando tudo hoje: <b class="pos">${fmt(remTotal-cashTotal)}</b> a menos de juros${consigAct.length?` · desconto só nos ${consigAct.length} consignados${anyEst?' (parte estimada)':''}`:''}</div></div>
+    <div class="card kpi span-3"><div class="k-lbl">Livre de parcelas em</div><div class="k-val">${freeMonth?ymLong(freeMonth):'—'}</div><div class="k-sub">${freeMonth?'faltam '+Math.max(0,monthsDiff(todayYM(),freeMonth))+' meses':''}</div></div>
+    <div class="card kpi span-3"><div class="k-lbl">Parcelas em ${ymLong(UI.month)}</div><div class="k-val num">${fmt(cur.parcelas)}</div><div class="k-sub">${pct(cur.pctParc)} do salário</div></div>
     <div class="card span-12">
       <h3>Total de parcelas por mês <span class="right t2">clique numa barra para abrir o mês</span></h3>
       <div class="chart" id="chParc"></div>
@@ -1159,9 +1188,9 @@ function monthsDiff(a,b){const[y1,m1]=a.split('-').map(Number),[y2,m2]=b.split('
 function debtRow(i,d){
   const pct=d.total?d.paid/d.total:0;
   return `<div class="debt ${d.remaining===0?'done':''}">
-    <div class="row1"><span class="nm">${esc(i.name)}</span><span class="num"><b>${fmt(d.remVal)}</b> <span class="muted">restante</span></span></div>
+    <div class="row1"><span class="nm">${esc(i.name)}</span><span class="num" style="text-align:right"><b>${fmt(d.remVal)}</b> <span class="muted">restante</span>${d.remaining>0&&isConsig(i)?(()=>{const c=debtCash(i);return `<br><b class="pos">${fmt(c.cash)}</b> <span class="muted">restante à vista</span>`})():''}</span></div>
     <div class="pbar" style="height:8px"><i style="width:${pct*100}%"></i></div>
-    <div class="meta"><span>${d.paid} de ${d.total} pagas</span><span>parcela ${fmt(d.parcela)}</span>${d.last?`<span>termina em ${ymLabel(d.last)}</span>`:''}${d.nextUnpaid?`<span>próxima: ${ymLabel(d.nextUnpaid)}</span>`:''}${d.remaining>0?`<button class="link" data-action="payoff" data-id="${i.id}" style="margin-left:auto">💸 quitar / amortizar</button>`:''}</div>
+    <div class="meta"><span>${d.paid} de ${d.total} pagas</span><span>parcela ${fmt(d.parcela)}</span>${d.last?`<span>termina em ${ymLabel(d.last)}</span>`:''}${d.nextUnpaid?`<span>próxima: ${ymLabel(d.nextUnpaid)}</span>`:''}${d.remaining>0&&isConsig(i)?(()=>{const c=debtCash(i);return c.rate!=null?`<span title="${c.src==='quote'?'calculada pelo valor de quitação que você informou'+(i.quote?' em '+dmy(i.quote.date):''):'estimada com a taxa de outro consignado — informe o valor real para ficar exato'}">juros ${pctRate(c.rate)} ${c.src==='quote'?'✓':'(estimado)'}</span>`:''})()+`<button class="link" data-action="quote" data-id="${i.id}">informar valor de quitação</button>`:''}${d.remaining>0?`<button class="link" data-action="payoff" data-id="${i.id}" style="margin-left:auto">💸 quitar / amortizar</button>`:''}</div>
     ${(i.payoffs||[]).map(po=>`<div class="meta" style="color:var(--paid-ink)">✓ ${po.mode==='total'?'Quitada':'Amortizada'} em ${dmy(po.date)}/${po.date.slice(2,4)} com ${fmt(po.amount)} · ${po.removed} parcela${po.removed!==1?'s':''} a menos${po.saved>0.005?' · economia de '+fmt(po.saved):''}</div>`).join('')}
   </div>`;
 }
@@ -1531,6 +1560,43 @@ function incomeModal(){
     });
 }
 
+function quoteModal(it){
+  const un=monthsList().filter(m=>planned(it,m)>0&&!isPaid(it,m));
+  openModal(`
+    <div class="m-hd"><h3>Valor de quitação · ${esc(it.name)}</h3><button class="x" data-close>×</button></div>
+    <div class="m-bd">
+      <div class="t2">Veja no app do banco quanto custa quitar hoje. Com esse valor o app descobre os juros do contrato e passa a calcular o “à vista” sozinho nos próximos meses.</div>
+      <div class="two">
+        <div><label class="f">Valor para quitar hoje</label><input class="in num" id="qVal" inputmode="decimal" value="${it.quote?NUM.format(it.quote.amount):''}" placeholder="0,00"></div>
+        <div><label class="f">Vence todo dia</label><input class="in" id="qDue" type="number" min="1" max="31" value="${it.due||''}" placeholder="ex.: 2"></div>
+      </div>
+      <label class="f">Esse valor quita as parcelas a partir de</label>
+      <select class="in" id="qFrom">${un.map((m,k)=>`<option value="${m}" ${it.quote&&it.quote.from===m?'selected':''}>${ymLong(m)} · ${un.length-k} parcela${un.length-k!==1?'s':''}</option>`).join('')}</select>
+      <div class="hint">Se a parcela deste mês já vai ser descontada e não entra na quitação, escolha o mês seguinte (e marque a deste mês como paga quando descontar).</div>
+      <label class="check"><input type="checkbox" id="qAll" ${S.settings.consigRate==null||S.settings.consigRateFrom===it.id?'checked':''}> Usar esta taxa como estimativa para os outros consignados que ainda não têm valor informado</label>
+      <div class="banner info" id="qRes" style="margin-top:12px"></div>
+    </div>
+    <div class="m-ft">${it.rate!=null?'<button class="btn danger" id="qDel">Remover</button><span class="spacer"></span>':''}<button class="btn" data-close>Cancelar</button><button class="btn primary" id="qSave">Salvar</button></div>`,m=>{
+      const q=x=>m.querySelector(x);setTimeout(()=>q('#qVal').focus(),30);
+      const calcR=()=>{
+        const tmp={...it,due:parseInt(q('#qDue').value)||it.due};
+        const ms=un.filter(x=>x>=q('#qFrom').value);
+        const nom=ms.reduce((s,x)=>s+val(it,x),0),a=parseMoney(q('#qVal').value);
+        return{r:solveRate(tmp,ms,a),ms,nom,a,tmp};
+      };
+      const upd=()=>{const c=calcR();q('#qRes').innerHTML=c.a>0?(c.a>=c.nom?'O valor é igual ou maior que a soma das parcelas — sem desconto de juros.':`${c.ms.length} parcelas somam ${fmt(c.nom)} · você economiza <b class="pos">${fmt(c.nom-c.a)}</b> quitando hoje.<br>Juros do contrato ≈ <b>${pctRate(c.r)}</b> (${((Math.pow(1+c.r,12)-1)*100).toLocaleString('pt-BR',{maximumFractionDigits:1})}% ao ano).`):'Digite o valor de quitação.'};
+      ['#qVal','#qDue'].forEach(x=>q(x).addEventListener('input',upd));q('#qFrom').addEventListener('change',upd);upd();
+      q('#qSave').onclick=()=>{
+        const c=calcR();if(!(c.a>0)){q('#qVal').focus();return}
+        snap();
+        it.due=c.tmp.due||null;it.rate=c.r;it.quote={amount:c.a,date:todayISO(),from:q('#qFrom').value};
+        if(q('#qAll').checked){S.settings.consigRate=c.r;S.settings.consigRateFrom=it.id}
+        save();closeModal();render();toast('Juros de '+pctRate(c.r)+' salvos para '+it.name,true);
+      };
+      const del=q('#qDel');if(del)del.onclick=()=>{snap();delete it.rate;delete it.quote;if(S.settings.consigRateFrom===it.id){delete S.settings.consigRate;delete S.settings.consigRateFrom}save();closeModal();render();toast('Valor de quitação removido',true)};
+    });
+}
+
 function payoffModal(it){
   const d=debtInfo(it);
   const unpaid=d.ms.filter(m=>!isPaid(it,m));
@@ -1544,7 +1610,7 @@ function payoffModal(it){
         <button class="chip" data-v="partial">Amortização (algumas parcelas)</button>
       </div>
       <div class="two">
-        <div><label class="f">Valor que você pagou</label><input class="in num" id="poVal" inputmode="decimal" placeholder="0,00"></div>
+        <div><label class="f">Valor que você pagou</label><input class="in num" id="poVal" inputmode="decimal" placeholder="${debtRate(it)?'à vista hoje ≈ '+NUM.format(debtCash(it).cash):'0,00'}"></div>
         <div><label class="f">Data do pagamento</label><input class="in" type="date" id="poDate" value="${todayISO()}"></div>
       </div>
       <div id="poPartial" style="display:none">
@@ -1668,6 +1734,7 @@ document.addEventListener('click',e=>{
     case 'newBill':newBillModal();break;
     case 'newIncome':incomeModal();break;
     case 'payoff':payoffModal(itemById(id));break;
+    case 'quote':quoteModal(itemById(id));break;
     case 'resBank':resBankModal();break;
     case 'syncNow':sync();break;
     case 'install':if(installEvt){installEvt.prompt();installEvt.userChoice.finally(()=>{installEvt=null;$('#installBtn').style.display='none'})}break;
