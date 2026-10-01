@@ -1268,20 +1268,33 @@ function resSeries(){
   });
   return{rows,realUntil,cur:cr,jrTot,last:rows[rows.length-1]};
 }
+const getGoal=()=>S.settings.goal||{name:'Casa própria',amount:100000};
+function goalETA(R,target){
+  const hit=R.rows.find(r=>(r.cr??r.proj)>=target);
+  if(hit)return{m:hit.m,after:false};
+  const last12=R.rows.slice(-12),avg=last12.reduce((s,r)=>s+r.pl,0)/(last12.length||1);
+  const r=resRate();let bal=R.last.proj,m=R.last.m,k=0;
+  if(avg<=0&&r<=0)return null;
+  while(bal<target&&k++<600){m=ymAdd(m,1);bal=bal*(1+r)+avg}
+  return k>600?null:{m,after:true,avg};
+}
 function vReserva(){
   const ms=monthsList(),R=resSeries(),rows=R.rows,last=R.last,rate=S.settings.savingsRate??0.6;
   const annual=(Math.pow(1+rate/100,12)-1);
   const planNow=rows[Math.max(0,R.realUntil)]?.cpJ||0;
   const diff=R.cur-planNow;
   const projDiff=last.proj-last.cpJ;
+  const G=getGoal(),eta=goalETA(R,G.amount),gp=G.amount?Math.min(1,R.cur/G.amount):0;
   return `
   <h2 class="title">Reserva</h2>
   <p class="sub">Marque o “Aporte na reserva” em Contas do mês quando guardar o dinheiro. O rendimento da poupança é estimado todo mês sobre o saldo. De vez em quando, acerte com o valor do banco em <b>✎ Atualizar com o saldo do banco</b>.</p>
   <div class="grid2">
-    <div class="card kpi hero span-3"><div class="k-lbl">Guardado de verdade</div><div class="k-val num">${fmt(R.cur)}</div><div class="k-sub">${R.jrTot>0.005?'inclui '+fmt(R.jrTot)+' de rendimento estimado':pct(last.cpJ?R.cur/last.cpJ:0)+' da meta final'}</div>
+    <div class="card kpi hero span-3"><div class="k-lbl">Guardado de verdade</div><div class="k-val num">${fmt(R.cur)}</div><div class="k-sub">${pct(G.amount?R.cur/G.amount:0)} da meta ${esc(G.name)}${R.jrTot>0.005?' · inclui '+fmt(R.jrTot)+' de rendimento':''}</div>
       <button class="btn sm" data-action="resBank" style="margin-top:10px;background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.3);color:#fff">✎ Atualizar com o saldo do banco</button></div>
-    <div class="card kpi span-3"><div class="k-lbl">Meta até ${ymLabel(ms[ms.length-1])} com rendimento</div><div class="k-val num">${fmt(last.cpJ)}</div><div class="k-sub">sem rendimento: ${fmt(last.cp)} · <b class="pos">+${fmt(last.cpJ-last.cp)}</b> de juros</div></div>
-    <div class="card kpi span-3"><div class="k-lbl">Projeção em ${ymLabel(ms[ms.length-1])}</div><div class="k-val num">${fmt(last.proj)}</div><div class="k-sub">saldo real de hoje + aportes do plano + rendimento · <span class="${projDiff<0?'neg':'pos'}">${projDiff>=0?'+':''}${fmt(projDiff)}</span> vs. meta</div></div>
+    <div class="card kpi span-3" style="border-color:var(--s3)"><div class="k-lbl" style="display:flex;justify-content:space-between;gap:8px">🏠 Meta: ${esc(G.name)} <button class="link" data-action="editGoal">✎ alterar</button></div><div class="k-val num">${fmt(G.amount)}</div>
+      <div class="pbar"><i style="width:${gp*100}%;background:var(--s3)"></i></div>
+      <div class="k-sub">${R.cur>=G.amount?'<b class="pos">Meta atingida! 🎉</b>':`falta <b>${fmt(G.amount-R.cur)}</b>`}${eta&&R.cur<G.amount?` · no ritmo do plano chega em <b>${ymLong(eta.m)}</b>${eta.after?` (depois de ${ymLabel(ms[ms.length-1])}, guardando ~${fmt(eta.avg)}/mês)`:''}`:''}</div></div>
+    <div class="card kpi span-3"><div class="k-lbl">Projeção em ${ymLabel(ms[ms.length-1])}</div><div class="k-val num">${fmt(last.proj)}</div><div class="k-sub">saldo real de hoje + aportes do plano + rendimento · <b>${pct(G.amount?last.proj/G.amount:0)}</b> da meta ${esc(G.name)}</div></div>
     <div class="card kpi span-3"><div class="k-lbl">Rendimento da poupança</div>
       <div style="display:flex;align-items:center;gap:8px;margin-top:4px"><input class="in num" id="resRate" inputmode="decimal" value="${String(rate).replace('.',',')}" style="width:90px;font-size:20px;font-weight:700;text-align:right"><span style="font-weight:600">% ao mês</span></div>
       <div class="k-sub" style="margin-top:6px">≈ ${pct(annual)} ao ano · a poupança paga 0,5% a.m. + TR (com a Selic acima de 8,5%)</div></div>
@@ -1797,6 +1810,7 @@ document.addEventListener('click',e=>{
     case 'newIncome':incomeModal();break;
     case 'payoff':payoffModal(itemById(id));break;
     case 'quote':quoteModal(itemById(id));break;
+    case 'editGoal':{const G=getGoal();const n=prompt('Nome da meta:',G.name);if(n===null)break;const v=prompt('Valor da meta (R$):',NUM.format(G.amount));if(v===null)break;const a=parseMoney(v);if(!(a>0)){alert('Valor inválido.');break}snap();S.settings.goal={name:n.trim()||'Meta',amount:a};save();render();toast('Meta atualizada: '+fmt(a),true);break}
     case 'payToSend':{const who=el.dataset.who,ym=UI.month;snap();let tot=0;
       byGroup('parcela').filter(i=>i.payTo===who&&planned(i,ym)>0&&!isPaid(i,ym)).forEach(i=>{const k=ym+'|'+i.id;const{manual,...r}=S.status[k]||{amount:null};S.status[k]={...r,paid:true,date:todayISO()};tot+=val(i,ym)});
       byGroup('receita').filter(i=>i.payFrom===who&&planned(i,ym)>0&&!isPaid(i,ym)).forEach(i=>{const k=ym+'|'+i.id;S.status[k]={...(S.status[k]||{amount:null}),paid:true,date:todayISO()};tot-=val(i,ym)});
