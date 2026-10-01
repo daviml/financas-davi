@@ -1927,6 +1927,20 @@ document.addEventListener('keydown',e=>{
   else if(e.key==='ArrowLeft')document.querySelector('[data-action="prevMonth"]').click();
   else if(e.key==='ArrowRight')document.querySelector('[data-action="nextMonth"]').click();
 });
+// Gesto no Início: arrastar o dedo para os lados troca o mês (como as setas do topo)
+{let sx=0,sy=0,st=0,ok=false;
+  const view=$('#view');
+  view.addEventListener('touchstart',e=>{
+    ok=UI.tab==='inicio'&&e.touches.length===1&&!modal.open&&!e.target.closest('input,select,textarea,.chart,.gridwrap');
+    if(!ok)return;sx=e.touches[0].clientX;sy=e.touches[0].clientY;st=Date.now();
+  },{passive:true});
+  view.addEventListener('touchend',e=>{
+    if(!ok)return;ok=false;
+    const t=e.changedTouches[0],dx=t.clientX-sx,dy=t.clientY-sy;
+    if(Date.now()-st>700||Math.abs(dx)<60||Math.abs(dx)<Math.abs(dy)*1.5)return;
+    document.querySelector(dx<0?'[data-action="nextMonth"]':'[data-action="prevMonth"]').click();
+  },{passive:true});
+}
 let rz;addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(()=>{if(['dividas','reserva','orc','entradas'].includes(UI.tab))render()},150)});
 // Outra aba abriu/alterou os dados → recarrega
 addEventListener('storage',e=>{if(e.key===KEY&&e.newValue){S=JSON.parse(e.newValue);snapRecs();render()}});
