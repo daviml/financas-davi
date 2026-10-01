@@ -297,6 +297,7 @@ table.items input:focus{border-color:var(--accent);outline:0;background:var(--su
 nav.bottom{display:none}
 .more-sheet{display:none}
 .st-ic{font-style:normal}
+.only-m{display:none}
 @media (max-width:640px){
   body{font-size:15px}
   .top-in{padding:8px 12px;gap:8px;flex-wrap:nowrap}
@@ -342,6 +343,25 @@ nav.bottom{display:none}
   nav.bottom button.on .i{filter:none;opacity:1}
   .fab{right:16px;bottom:calc(76px + env(safe-area-inset-bottom));width:60px;height:60px;padding:0;border-radius:18px;justify-content:center;font-size:0}
   .fab span{font-size:34px;margin:0}
+  /* revisão S22 */
+  .hide-m{display:none!important}
+  .only-m{display:block!important}
+  .card h3 .right.t2{display:none}
+  .btn{white-space:nowrap}
+  .grid2>.kpi.span-3:not(.kpi-rec):not(.kpi-out):not(.kpi-bills){grid-column:span 6;padding:12px}
+  .grid2>.kpi.span-3:not(.kpi-rec):not(.kpi-out):not(.kpi-bills) .k-val{font-size:18px}
+  .grid2>.kpi.span-3:not(.kpi-rec):not(.kpi-out):not(.kpi-bills) .k-lbl{font-size:12px}
+  .grid2>.kpi.span-3:not(.kpi-rec):not(.kpi-out):not(.kpi-bills) .k-sub{font-size:11.5px}
+  .grid2>.kpi.hero,.grid2>.kpi.full-m{grid-column:span 12!important}
+  .grid2>.kpi.hero .k-val,.grid2>.kpi.full-m .k-val{font-size:26px!important}
+  .bill .nm{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.25}
+  .bill .meta{font-size:11.5px;line-height:1.3}
+  .bill .amt{font-size:14px}
+  .bill .chk{width:22px;height:22px}
+  .bill{gap:10px}
+  table.items{font-size:12.5px}
+  table.items th,table.items td{padding:5px 4px}
+  .debt .meta{gap:4px 10px;font-size:11.5px}
   #toast{bottom:calc(150px + env(safe-area-inset-bottom));left:12px;right:12px;transform:none;max-width:none;justify-content:space-between}
   p.sub{font-size:13px;margin-bottom:12px}
   .more-sheet.open{display:block;position:fixed;left:10px;right:10px;bottom:calc(72px + env(safe-area-inset-bottom));z-index:46;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.35);padding:6px}
@@ -753,9 +773,9 @@ function calc(ym){
 function dueInfo(it,ym){
   const s=st(it,ym);
   if(s&&s.paid)return{cls:'paid',text:(it.group==='reserva'?'Guardado':it.group==='receita'?'Recebido':'Pago')+(s.date?' em '+dmy(s.date):'')};
-  if(isPaid(it,ym))return{cls:'paid',text:'Descontado em folha em '+dmy(folhaDate(it,ym))};
-  if(it.folha&&!(s&&s.manual)){const f=folhaDate(it,ym),diff=daysBetween(todayISO(),f);return{cls:diff<=3?'soon':'',text:'Desconto em folha dia '+dmy(f)+(diff===0?' (hoje)':diff>0&&diff<=3?' (em '+diff+' dia'+(diff>1?'s':'')+')':''),diff}}
-  if(!it.due)return{cls:'',text:it.group==='receita'?'sem dia definido · toque no ✎ para definir':'sem vencimento definido'};
+  if(isPaid(it,ym))return{cls:'paid',text:'Descontado na folha '+dmy(folhaDate(it,ym))};
+  if(it.folha&&!(s&&s.manual)){const f=folhaDate(it,ym),diff=daysBetween(todayISO(),f);return{cls:diff<=3?'soon':'',text:'Folha dia '+dmy(f)+(diff===0?' (hoje)':diff>0&&diff<=3?' (em '+diff+' dia'+(diff>1?'s':'')+')':''),diff}}
+  if(!it.due)return{cls:'',text:it.group==='receita'?'sem dia definido':'sem vencimento'};
   const d=Math.min(it.due,dim(ym));const dueISO=ym+'-'+pad(d);const t=todayISO();
   const diff=daysBetween(t,dueISO);
   if(it.group==='receita'){
@@ -814,7 +834,7 @@ function niceMax(v){if(v<=0)return 1;const p=Math.pow(10,Math.floor(Math.log10(v
 function barPath(x,y,w,h,r){r=Math.min(r,w/2,h);if(h<=0)return'';return`M${x},${y+h}V${y+r}Q${x},${y} ${x+r},${y}H${x+w-r}Q${x+w},${y} ${x+w},${y+r}V${y+h}Z`}
 
 function lineChart(el,{labels,series,height=240,yFmt=fmt,highlight}){
-  const W=Math.max(el.clientWidth,280),H=height,pl=58,pr=70,pt=14,pb=26,iw=W-pl-pr,ih=H-pt-pb;
+  const W=Math.max(el.clientWidth,280),narrow=W<520,H=height,pl=narrow?44:58,pr=narrow?12:70,pt=14,pb=26,iw=W-pl-pr,ih=H-pt-pb;
   const max=niceMax(Math.max(1,...series.flatMap(s=>s.values.filter(v=>v!=null))));
   const x=i=>pl+(labels.length<=1?iw/2:i*iw/(labels.length-1)),y=v=>pt+ih-v/max*ih;
   let g='';
@@ -826,7 +846,7 @@ function lineChart(el,{labels,series,height=240,yFmt=fmt,highlight}){
     let d='',on=false;s.values.forEach((v,i)=>{if(v==null){on=false;return}d+=(on?'L':'M')+x(i)+','+y(v);on=true});
     g+=`<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" ${s.dash?'stroke-dasharray="5 4"':''}/>`;
     let li=-1;s.values.forEach((v,i)=>{if(v!=null)li=i});
-    if(li>=0){g+=`<circle cx="${x(li)}" cy="${y(s.values[li])}" r="4" fill="${s.color}" stroke="var(--surface)" stroke-width="2"/><text class="dl" x="${x(li)+8}" y="${y(s.values[li])+4}">${esc(s.name)}</text>`}
+    if(li>=0){g+=`<circle cx="${x(li)}" cy="${y(s.values[li])}" r="4" fill="${s.color}" stroke="var(--surface)" stroke-width="2"/>`+(narrow?'':`<text class="dl" x="${x(li)+8}" y="${y(s.values[li])+4}">${esc(s.name)}</text>`)}
   });
   g+=`<line class="xh" id="xh" x1="0" x2="0" y1="${pt}" y2="${pt+ih}" style="display:none"/><g id="hd"></g><rect x="${pl}" y="${pt}" width="${iw}" height="${ih}" fill="transparent" id="hov"/>`;
   el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img">${g}</svg>`;
@@ -972,7 +992,7 @@ function catRow(c){
 function billRow(i,ym,compact){
   const d=dueInfo(i,ym),p=isPaid(i,ym),v=val(i,ym),pl=planned(i,ym);
   let extra='';
-  if(i.group==='parcela'){const di=debtInfo(i);const idx=di.ms.indexOf(ym);if(idx>=0)extra=` · parcela ${idx+1} de ${di.total} no plano`}
+  if(i.group==='parcela'){const di=debtInfo(i);const idx=di.ms.indexOf(ym);if(idx>=0)extra=` · parcela ${idx+1}/${di.total}`}
   return `<div class="bill ${compact?'compact':''} ${d.cls}" data-action="togglePaid" data-id="${i.id}" data-m="${ym}">
     <div class="chk">✓</div>
     <div class="info"><div class="nm">${esc(i.name)}</div><div class="meta">${d.text}${compact?'':extra}</div></div>
@@ -1012,7 +1032,7 @@ function vEntradas(){
     <div class="card kpi hero span-3"><div class="k-lbl">Previsto em ${ymLong(ym)}</div><div class="k-val num">${fmt(c.receita)}</div><div class="k-sub">${list.length} entrada${list.length!==1?'s':''}</div></div>
     <div class="card kpi span-3"><div class="k-lbl">Já recebido</div><div class="k-val num pos">${fmt(rec)}</div><div class="pbar"><i style="width:${c.receita?Math.min(100,rec/c.receita*100):0}%"></i></div></div>
     <div class="card kpi span-3"><div class="k-lbl">Falta receber</div><div class="k-val num">${fmt(Math.max(0,c.receita-rec))}</div><div class="k-sub">${rec>=c.receita&&c.receita>0?'tudo recebido ✓':''}</div></div>
-    <div class="card kpi span-3"><div class="k-lbl">Extras em ${yr}</div><div class="k-val num">${fmt(extraYear)}</div><div class="k-sub">fora salário e 13º</div></div>
+    <div class="card kpi span-3 full-m"><div class="k-lbl">Extras em ${yr}</div><div class="k-val num">${fmt(extraYear)}</div><div class="k-sub">fora salário e 13º</div></div>
 
     <div class="card span-7">
       <h3>💰 Entradas de ${ymLong(ym)} <span class="right"><button class="btn sm primary" data-action="newIncome">+ Entrada extra</button></span></h3>
@@ -1021,8 +1041,8 @@ function vEntradas(){
     </div>
     <div class="card span-5">
       <h3>📅 Próximos meses</h3>
-      <div style="overflow:auto"><table class="items num"><thead><tr><th>Mês</th>${kinds.map(k=>`<th style="text-align:right">${k}</th>`).join('')}<th style="text-align:right">Total</th></tr></thead>
-      <tbody>${next.map(m=>{const k=byKind(m);return`<tr><td><button class="link" data-action="goMonthTab" data-m="${m}" data-tab="entradas">${ymLabel(m)}</button></td>${kinds.map(x=>`<td style="text-align:right" class="${k[x]?'':'muted'}">${k[x]?fmt(k[x]):'–'}</td>`).join('')}<td style="text-align:right"><b>${fmt(kinds.reduce((s,x)=>s+k[x],0))}</b></td></tr>`}).join('')||'<tr><td colspan="5" class="muted">Fim do plano.</td></tr>'}</tbody></table></div>
+      <div style="overflow:auto"><table class="items num"><thead><tr><th>Mês</th>${kinds.map(k=>`<th class="hide-m" style="text-align:right">${k}</th>`).join('')}<th style="text-align:right">Total</th></tr></thead>
+      <tbody>${next.map(m=>{const k=byKind(m);return`<tr><td><button class="link" data-action="goMonthTab" data-m="${m}" data-tab="entradas">${ymLabel(m)}</button><span class="only-m muted" style="font-size:11px">${kinds.filter(x=>k[x]).map(x=>x+' '+fmt(k[x])).join(' · ')}</span></td>${kinds.map(x=>`<td style="text-align:right" class="hide-m ${k[x]?'':'muted'}">${k[x]?fmt(k[x]):'–'}</td>`).join('')}<td style="text-align:right"><b>${fmt(kinds.reduce((s,x)=>s+k[x],0))}</b></td></tr>`}).join('')||'<tr><td colspan="5" class="muted">Fim do plano.</td></tr>'}</tbody></table></div>
     </div>
 
     <div class="card span-12"><h3>Entradas por mês <span class="right t2">clique numa barra para abrir o mês</span></h3><div class="chart" id="chInc"></div></div>
@@ -1124,19 +1144,20 @@ function vContas(){
 function sheetWindow(){
   const all=monthsList();
   const W=Math.min(parseInt(getComputedStyle(document.documentElement).getPropertyValue('--maxw'))||1280,document.documentElement.clientWidth)-34;
-  const labelW=W<700?150:210;
-  const colMin=UI.sheetCompact?62:86;
-  const n=Math.max(2,Math.min(UI.sheetCompact?18:12,all.length,Math.floor((W-labelW)/colMin)));
+  const compact=UI.sheetCompact??(W<700);
+  const labelW=W<700?118:210;
+  const colMin=compact?(W<700?60:62):86;
+  const n=Math.max(2,Math.min(compact?18:12,all.length,Math.floor((W-labelW)/colMin)));
   let i=all.indexOf(UI.sheetStart);
   const ci=all.indexOf(UI.month);
   if(i<0||ci<i||ci>=i+n)i=ci;           // o mês selecionado sempre aparece
   i=Math.max(0,Math.min(i,all.length-n));
   UI.sheetStart=all[i];
-  return{all,ms:all.slice(i,i+n),i,n,labelW};
+  return{all,ms:all.slice(i,i+n),i,n,labelW,compact};
 }
 function vOrc(){
   const SW=sheetWindow(),ms=SW.ms,all=SW.all;
-  const fmtN=UI.sheetCompact?(n=>n?Math.round(n).toLocaleString('pt-BR'):'–'):(n=>n?NUM.format(n):'–');
+  const fmtN=SW.compact?(n=>n?Math.round(n).toLocaleString('pt-BR'):'–'):(n=>n?NUM.format(n):'–');
   const C=Object.fromEntries(ms.map(m=>[m,calc(m)]));
   const cur=UI.month;
   const cell=(it,m,opts={})=>{
@@ -1167,11 +1188,11 @@ function vOrc(){
       <button data-action="sheetNext" ${last?'disabled':''} title="Próximos meses">›</button>
       <button data-action="sheetLast" ${last?'disabled':''} title="Fim do plano">»</button>
     </div>
-    <label class="check" style="margin:0;font-size:13px"><input type="checkbox" id="sheetCompact" ${UI.sheetCompact?'checked':''}> sem centavos (cabem mais meses)</label>
+    <label class="check" style="margin:0;font-size:13px"><input type="checkbox" id="sheetCompact" ${SW.compact?'checked':''}> sem centavos (cabem mais meses)</label>
     <label class="check" style="margin:0;font-size:13px"><input type="checkbox" id="showAllCats" ${UI.sheetMode==='all'?'checked':''}> mostrar categorias sem valor</label>
     <div class="legend-inline" style="margin-left:auto"><span style="--bg-sw:var(--paid-bg)">pago</span><span style="--bg-sw:var(--accent)">mês selecionado</span><span style="--bg-sw:var(--bad)">passou do orçado</span></div>
   </div>
-  <div class="gridwrap" id="gridwrap"><table class="sheet ${UI.sheetCompact?'compact':''}">
+  <div class="gridwrap" id="gridwrap"><table class="sheet ${SW.compact?'compact':''}">
     <colgroup><col style="width:${SW.labelW}px">${ms.map(()=>'<col>').join('')}</colgroup>
     <thead><tr><th class="rowh">Mês</th>${ms.map(m=>`<th class="${m===cur?'cur':''}" data-action="goMonth" data-m="${m}">${ymLabel(m)}</th>`).join('')}</tr></thead>
     <tbody>
@@ -1230,7 +1251,7 @@ function vDividas(){
   <p class="sub">Acompanhe quanto falta e quando cada parcela termina. As parcelas pagas são as que você marca em “Contas do mês”.</p>
   <div class="grid2">
     <div class="card kpi hero span-3"><div class="k-lbl">Falta pagar (no plano)</div><div class="k-val num">${fmt(remTotal)}</div><div class="k-sub">${active.length} dívida${active.length!==1?'s':''} ativa${active.length!==1?'s':''}</div></div>
-    <div class="card kpi span-3" style="border-color:var(--paid-strong)"><div class="k-lbl">Falta pagar (à vista)</div><div class="k-val num pos">${fmt(cashTotal)}</div><div class="k-sub">quitando tudo hoje: <b class="pos">${fmt(remTotal-cashTotal)}</b> a menos de juros${consigAct.length?` · desconto só nos ${consigAct.length} consignados${anyEst?' (parte estimada)':''}`:''}</div></div>
+    <div class="card kpi span-3 full-m" style="border-color:var(--paid-strong)"><div class="k-lbl">Falta pagar (à vista)</div><div class="k-val num pos">${fmt(cashTotal)}</div><div class="k-sub">quitando tudo hoje: <b class="pos">${fmt(remTotal-cashTotal)}</b> a menos de juros${consigAct.length?` · desconto só nos ${consigAct.length} consignados${anyEst?' (parte estimada)':''}`:''}</div></div>
     <div class="card kpi span-3"><div class="k-lbl">Livre de parcelas em</div><div class="k-val">${freeMonth?ymLong(freeMonth):'—'}</div><div class="k-sub">${freeMonth?'faltam '+Math.max(0,monthsDiff(todayYM(),freeMonth))+' meses':''}</div></div>
     <div class="card kpi span-3"><div class="k-lbl">Parcelas em ${ymLong(UI.month)}</div><div class="k-val num">${fmt(cur.parcelas)}</div><div class="k-sub">${pct(cur.pctParc)} do salário</div></div>
     ${payToCards()}
@@ -1278,10 +1299,10 @@ function payToCards(){
         <div class="kpi span-4"><div class="k-lbl">Devo no total para ${esc(who)}</div><div class="k-val num">${fmt(owed-credAll)}</div><div class="k-sub">${credAll?`parcelas ${fmt(owed)} − ${fmt(credAll)} que ${esc(who)} te deve`:'parcelas ainda não enviadas, de todos os meses'}</div></div>
         <div class="kpi span-4"><div class="k-lbl">Último repasse</div><div class="k-val">${last?ymLong(last):'—'}</div><div class="k-sub">${last?'faltam '+Math.max(0,monthsDiff(ym,last)+1)+' meses (contando este) · próximo mês: '+fmt(nxTot):''}</div></div>
       </div>
-      <div style="overflow:auto"><table class="items num"><thead><tr><th>Dívida</th><th style="text-align:right">${ymLabel(ym)}</th><th style="text-align:right">Restante</th><th style="text-align:right">Termina</th></tr></thead><tbody>
-        ${infos.sort((a,b)=>(a.d.last||'').localeCompare(b.d.last||'')).map(({i,d})=>`<tr><td>${isPaid(i,ym)?'✓ ':''}${esc(i.name)}</td><td style="text-align:right" class="${isPaid(i,ym)?'pos':planned(i,ym)?'':'muted'}">${planned(i,ym)||st(i,ym)?fmt(val(i,ym)):'–'}</td><td style="text-align:right">${d.remVal?fmt(d.remVal):'<span class="pos">quitada</span>'}</td><td style="text-align:right" class="t2">${d.last?ymLabel(d.last):'–'}</td></tr>`).join('')}
-        ${cred.map(i=>{const rest=monthsList().filter(m=>planned(i,m)>0&&!isPaid(i,m));return`<tr class="pos"><td>${isPaid(i,ym)?'✓ ':''}${esc(i.name)}</td><td style="text-align:right">${planned(i,ym)?'− '+fmt(val(i,ym)):'–'}</td><td style="text-align:right">${rest.length?'− '+fmt(rest.reduce((a,m)=>a+val(i,m),0)):'recebido'}</td><td style="text-align:right" class="t2">${rest.length?ymLabel(rest[rest.length-1]):'–'}</td></tr>`}).join('')}
-        <tr style="font-weight:700"><td>Total</td><td style="text-align:right">${fmt(monTot-credTot)}</td><td style="text-align:right">${fmt(owed-credAll)}</td><td></td></tr>
+      <div style="overflow:auto"><table class="items num"><thead><tr><th>Dívida</th><th style="text-align:right">${ymLabel(ym)}</th><th style="text-align:right">Restante</th><th class="hide-m" style="text-align:right">Termina</th></tr></thead><tbody>
+        ${infos.sort((a,b)=>(a.d.last||'').localeCompare(b.d.last||'')).map(({i,d})=>`<tr><td>${isPaid(i,ym)?'✓ ':''}${esc(i.name)}</td><td style="text-align:right" class="${isPaid(i,ym)?'pos':planned(i,ym)?'':'muted'}">${planned(i,ym)||st(i,ym)?fmt(val(i,ym)):'–'}</td><td style="text-align:right">${d.remVal?fmt(d.remVal):'<span class="pos">quitada</span>'}</td><td style="text-align:right" class="t2 hide-m">${d.last?ymLabel(d.last):'–'}</td></tr>`).join('')}
+        ${cred.map(i=>{const rest=monthsList().filter(m=>planned(i,m)>0&&!isPaid(i,m));return`<tr class="pos"><td>${isPaid(i,ym)?'✓ ':''}${esc(i.name)}</td><td style="text-align:right">${planned(i,ym)?'− '+fmt(val(i,ym)):'–'}</td><td style="text-align:right">${rest.length?'− '+fmt(rest.reduce((a,m)=>a+val(i,m),0)):'recebido'}</td><td style="text-align:right" class="t2 hide-m">${rest.length?ymLabel(rest[rest.length-1]):'–'}</td></tr>`}).join('')}
+        <tr style="font-weight:700"><td>Total</td><td style="text-align:right">${fmt(monTot-credTot)}</td><td style="text-align:right">${fmt(owed-credAll)}</td><td class="hide-m"></td></tr>
       </tbody></table></div>
     </div>`;
   }).join('');
@@ -1345,12 +1366,12 @@ function vReserva(){
   <div class="grid2">
     <div class="card kpi hero span-3"><div class="k-lbl">Guardado de verdade</div><div class="k-val num">${fmt(R.cur)}</div><div class="k-sub">${pct(G.amount?R.cur/G.amount:0)} da meta ${esc(G.name)}${R.jrTot>0.005?' · inclui '+fmt(R.jrTot)+' de rendimento':''}</div>
       <button class="btn sm" data-action="resBank" style="margin-top:10px;background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.3);color:#fff">✎ Atualizar com o saldo do banco</button></div>
-    <div class="card kpi span-3" style="border-color:var(--s3)"><div class="k-lbl" style="display:flex;justify-content:space-between;gap:8px">🏠 Meta: ${esc(G.name)} <button class="link" data-action="editGoal">✎ alterar</button></div><div class="k-val num">${fmt(G.amount)}</div>
+    <div class="card kpi span-3 full-m" style="border-color:var(--s3)"><div class="k-lbl" style="display:flex;justify-content:space-between;gap:8px">🏠 Meta: ${esc(G.name)} <button class="link" data-action="editGoal">✎ alterar</button></div><div class="k-val num">${fmt(G.amount)}</div>
       <div class="pbar"><i style="width:${gp*100}%;background:var(--s3)"></i></div>
       <div class="k-sub">${R.cur>=G.amount?'<b class="pos">Meta atingida! 🎉</b>':`falta <b>${fmt(G.amount-R.cur)}</b>`}${eta&&R.cur<G.amount?` · no ritmo do plano chega em <b>${ymLong(eta.m)}</b>${eta.after?` (depois de ${ymLabel(ms[ms.length-1])}, guardando ~${fmt(eta.avg)}/mês)`:''}`:''}</div></div>
     <div class="card kpi span-3"><div class="k-lbl">Projeção em ${ymLabel(ms[ms.length-1])}</div><div class="k-val num">${fmt(last.proj)}</div><div class="k-sub">saldo real de hoje + aportes do plano + rendimento · <b>${pct(G.amount?last.proj/G.amount:0)}</b> da meta ${esc(G.name)}</div></div>
     <div class="card kpi span-3"><div class="k-lbl">Rendimento da poupança</div>
-      <div style="display:flex;align-items:center;gap:8px;margin-top:4px"><input class="in num" id="resRate" inputmode="decimal" value="${String(rate).replace('.',',')}" style="width:90px;font-size:20px;font-weight:700;text-align:right"><span style="font-weight:600">% ao mês</span></div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:4px"><input class="in num" id="resRate" inputmode="decimal" value="${String(rate).replace('.',',')}" style="width:80px;font-size:20px;font-weight:700;text-align:right"><span style="font-weight:600;white-space:nowrap">% ao mês</span></div>
       <div class="k-sub" style="margin-top:6px">≈ ${pct(annual)} ao ano · a poupança paga 0,5% a.m. + TR (com a Selic acima de 8,5%)</div></div>
     <div class="card span-12"><h3>Evolução da reserva <span class="right t2">comparado ao plano até agora: <b class="${diff<0?'neg':'pos'}">${diff>=0?'+':''}${fmt(diff)}</b></span></h3>
       <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--text-2);margin:-4px 0 6px">
@@ -1363,8 +1384,8 @@ function vReserva(){
       ${(S.resAdj||[]).length?[...S.resAdj].sort((a,b)=>b.date.localeCompare(a.date)).map(a=>`<div class="tx" style="cursor:default"><div class="ic">${a.amount<0?'↘':'↗'}</div><div class="info"><div class="nm">${esc(a.note||'Ajuste')}</div><div class="meta">${dmy(a.date)}/${a.date.slice(2,4)}${a.bank!=null?' · saldo informado '+fmt(a.bank):''}</div></div><div class="amt num ${a.amount<0?'neg':'pos'}">${a.amount>0?'+':''}${fmt(a.amount)}</div><button class="edit iconbtn" style="height:30px;min-width:30px;padding:0" data-action="resAdjDel" data-id="${a.id}" title="Excluir ajuste">🗑</button></div>`).join(''):'<div class="empty">Nenhum ajuste ainda. Informe o saldo do banco para o valor guardado ficar igual ao real.</div>'}
     </div>
     <div class="card span-12"><h3>Mês a mês</h3>
-      <div style="overflow:auto"><table class="items num"><thead><tr><th>Mês</th><th style="text-align:right">Aporte planejado</th><th style="text-align:right">Aporte real</th><th style="text-align:right">Ajustes</th><th style="text-align:right">Rendimento</th><th style="text-align:right">Plano sem rendimento</th><th style="text-align:right">Plano com rendimento</th><th style="text-align:right">Guardado real</th></tr></thead>
-      <tbody>${rows.map(r=>`<tr ${r.m===UI.month?'style="background:var(--accent-soft)"':''}><td>${ymLabel(r.m)}</td><td style="text-align:right">${fmt(r.pl)}</td><td style="text-align:right" class="${r.re?'pos':'muted'}">${r.re?fmt(r.re):'–'}</td><td style="text-align:right" class="${r.aj<0?'neg':r.aj?'pos':'muted'}">${r.aj?(r.aj>0?'+':'')+fmt(r.aj):'–'}</td><td style="text-align:right" class="${r.jr?'pos':'muted'}">${r.jr!=null?(r.jr?'+'+fmt(r.jr):'–'):'+'+fmt(r.jp)}</td><td style="text-align:right" class="t2">${fmt(r.cp)}</td><td style="text-align:right">${fmt(r.cpJ)}</td><td style="text-align:right">${r.cr!=null?'<b>'+fmt(r.cr)+'</b>':'<span class="muted" title="projeção">≈ '+fmt(r.proj)+'</span>'}</td></tr>`).join('')}</tbody></table></div>
+      <div style="overflow:auto"><table class="items num"><thead><tr><th>Mês</th><th style="text-align:right">Aporte planejado</th><th class="hide-m" style="text-align:right">Aporte real</th><th class="hide-m" style="text-align:right">Ajustes</th><th class="hide-m" style="text-align:right">Rendimento</th><th class="hide-m" style="text-align:right">Plano sem rendimento</th><th style="text-align:right">Plano com rendimento</th><th style="text-align:right">Guardado real</th></tr></thead>
+      <tbody>${rows.map(r=>`<tr ${r.m===UI.month?'style="background:var(--accent-soft)"':''}><td>${ymLabel(r.m)}</td><td style="text-align:right">${fmt(r.pl)}</td><td style="text-align:right" class="hide-m ${r.re?'pos':'muted'}">${r.re?fmt(r.re):'–'}</td><td style="text-align:right" class="hide-m ${r.aj<0?'neg':r.aj?'pos':'muted'}">${r.aj?(r.aj>0?'+':'')+fmt(r.aj):'–'}</td><td style="text-align:right" class="hide-m ${r.jr?'pos':'muted'}">${r.jr!=null?(r.jr?'+'+fmt(r.jr):'–'):'+'+fmt(r.jp)}</td><td style="text-align:right" class="t2 hide-m">${fmt(r.cp)}</td><td style="text-align:right">${fmt(r.cpJ)}</td><td style="text-align:right">${r.cr!=null?'<b>'+fmt(r.cr)+'</b>':'<span class="muted" title="projeção">≈ '+fmt(r.proj)+'</span>'}</td></tr>`).join('')}</tbody></table></div>
       <div class="hint">Nos meses futuros, “Rendimento” mostra o estimado do plano e “Guardado real” mostra a projeção (≈) a partir do saldo de hoje.</div>
     </div>
   </div>`;
@@ -1445,14 +1466,14 @@ function vAjustes(){
     <div class="card span-12">
       <h3>📋 Itens do orçamento <span class="right t2">renomeie, mude o grupo, o ícone ou o dia de vencimento</span></h3>
       <div style="overflow:auto"><table class="items">
-        <thead><tr><th style="width:56px">Ícone</th><th>Nome</th><th style="width:220px">Grupo</th><th style="width:110px">Vence dia</th><th style="width:130px">Forma padrão</th><th style="width:130px;text-align:right">Valor em ${ymLabel(UI.month)}</th><th style="width:40px"></th></tr></thead>
+        <thead><tr><th style="width:56px">Ícone</th><th>Nome</th><th style="width:220px">Grupo</th><th style="width:110px">Vence dia</th><th class="hide-m" style="width:130px">Forma padrão</th><th class="hide-m" style="width:130px;text-align:right">Valor em ${ymLabel(UI.month)}</th><th style="width:40px"></th></tr></thead>
         <tbody>${Object.keys(GROUPS).map(g=>byGroup(g).map(i=>`<tr data-id="${i.id}">
           <td><input data-f="icon" value="${esc(i.icon||'')}" maxlength="4" style="text-align:center"></td>
           <td><input data-f="name" value="${esc(i.name)}"></td>
           <td><select data-f="group">${gOpts(i.group)}</select></td>
           <td><input data-f="due" type="number" min="1" max="31" value="${i.due||''}" placeholder="—"></td>
-          <td>${i.group==='diadia'?`<select data-f="defMethod"><option value="">—</option>${METHODS.map(([k,l])=>`<option value="${k}" ${i.defMethod===k?'selected':''}>${l}</option>`).join('')}</select>`:''}</td>
-          <td class="num" style="text-align:right;color:var(--text-2)">${fmtN(planned(i,UI.month))}</td>
+          <td class="hide-m">${i.group==='diadia'?`<select data-f="defMethod"><option value="">—</option>${METHODS.map(([k,l])=>`<option value="${k}" ${i.defMethod===k?'selected':''}>${l}</option>`).join('')}</select>`:''}</td>
+          <td class="num hide-m" style="text-align:right;color:var(--text-2)">${fmtN(planned(i,UI.month))}</td>
           <td><button class="edit iconbtn" style="height:30px;min-width:30px;padding:0" data-action="delItem" data-id="${i.id}" title="Excluir">🗑</button></td>
         </tr>`).join('')).join('')}</tbody>
       </table></div>
