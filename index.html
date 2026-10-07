@@ -757,6 +757,7 @@ function calc(ym){
   const fixas=sumV('fixa'),parcelas=sumV('parcela'),quit=sumV('quitacao'),reserva=sumV('reserva');
   const diaPlan=cats.reduce((s,c)=>s+c.plan,0),diaSpent=round2(cats.reduce((s,c)=>s+c.spent,0));
   const diaProj=cats.reduce((s,c)=>s+Math.max(c.plan,c.spent),0);
+  const semOrc=round2(cats.filter(c=>!c.plan).reduce((s,c)=>s+c.spent,0));
   const saidas=fixas+parcelas+quit+diaProj;
   const sobra=receita-saidas;
   const bills=BILL_GROUPS.flatMap(byGroup).filter(i=>planned(i,ym)>0||st(i,ym));
@@ -766,7 +767,7 @@ function calc(ym){
   const billsAmt=billsNoRes.reduce((s,i)=>s+val(i,ym),0);
   const salaryIt=S.items.find(i=>i.salary)||byGroup('receita')[0];
   const salary=salaryIt?val(salaryIt,ym):0;
-  return{ym,cats,receita,fixas,parcelas,quit,reserva,diaPlan,diaSpent,diaProj,saidas,sobra,livre:sobra-reserva,
+  return{ym,cats,receita,fixas,parcelas,quit,reserva,diaPlan,diaSpent,diaProj,semOrc,saidas,sobra,livre:sobra-reserva,
     bills,billsNoRes,paidBills,paidAmt,billsAmt,pctParc:salary?parcelas/salary:0,txs,
     jaSaiu:paidAmt+diaSpent, vaiSair:(billsAmt-paidAmt)+Math.max(0,diaProj-diaSpent)};
 }
@@ -949,9 +950,9 @@ function vInicio(){
     </div>
 
     <div class="card span-7 c-dia">
-      <h3>🧾 Dia a dia <span class="right t2 num">${fmt(c.diaSpent)}${c.diaPlan?' de '+fmt(c.diaPlan):''}</span></h3>
+      <h3>🧾 Dia a dia <span class="right t2 num">${fmt(c.diaSpent)} no mês</span></h3>
       ${isNow?`<div class="hint" style="margin:-2px 0 6px">Gasto hoje: <b class="num">${fmt(todaySpent)}</b></div>`:''}
-      ${c.cats.filter(x=>x.plan>0||x.spent>0).map(catRow).join('')||'<div class="empty">Nenhum gasto neste mês ainda.</div>'}
+      ${c.cats.filter(x=>x.plan>0||x.spent>0).map(x=>catRow(x,c)).join('')||'<div class="empty">Nenhum gasto neste mês ainda.</div>'}
       ${c.cats.some(x=>!x.plan&&!x.spent)?`<div class="hint">Categorias sem orçamento e sem gastos ficam escondidas. Gastos em categorias sem orçamento reduzem a sobra.</div>`:''}
     </div>
 
@@ -975,15 +976,17 @@ function vInicio(){
     </div>
   </div>`;
 }
-function catRow(c){
-  const pct=c.plan?c.spent/c.plan:0;
-  const cls=pct>1?'over':pct>.85?'warn':'';
-  const rest=c.plan-c.spent;
-  const sub=!c.plan?'<span class="t2" style="font-size:12px">sem orçamento</span>':`<span class="${rest<0?'neg':'t2'}" style="font-size:12px">${rest<0?'passou '+fmt(-rest):'restam '+fmt(rest)}</span>`;
+// Categoria sem orçamento: o limite é a sobra prevista do mês (antes desses gastos), dividida entre todas as sem orçamento.
+function catRow(c,m){
+  const free=!c.plan;
+  const lim=free?m.sobra+m.semOrc:c.plan;
+  const rest=free?m.sobra:c.plan-c.spent;
+  const pct=lim>0?c.spent/lim:(c.spent>0?1.01:0);
+  const cls=rest<0?'over':(free?m.semOrc/lim:pct)>.85?'warn':'';
   return `<div class="cat" data-action="filterCat" data-id="${c.item.id}" style="cursor:pointer">
     <div class="ic">${c.item.icon||'•'}</div>
     <div class="nm">${esc(c.item.name)}</div>
-    <div class="vl num"><b>${fmt(c.spent)}</b>${c.plan?` <span class="muted">/ ${fmt(c.plan)}</span>`:''}<br>${sub}</div>
+    <div class="vl num"><b>${fmt(c.spent)}</b> <span class="muted">/ ${fmt(Math.max(0,lim))}</span><br><span class="${rest<0?'neg':'t2'}" style="font-size:12px">${rest<0?'passou '+fmt(-rest):'restam '+fmt(rest)}${free?' da sobra':''}</span></div>
     <div class="bar"><i class="${cls}" style="width:${Math.min(100,pct*100)}%"></i></div>
   </div>`;
 }
@@ -1084,8 +1087,8 @@ function vLanc(){
     </div>
     <div class="card span-5">
       <h3>Por categoria <span class="right"><button class="link" data-action="exportCsv">exportar CSV</button></span></h3>
-      ${c.cats.filter(x=>x.plan||x.spent).map(catRow).join('')||'<div class="empty">Sem dados.</div>'}
-      <div class="cat" style="border-top:1px solid var(--border);margin-top:4px"><div class="ic">Σ</div><div class="nm">Total</div><div class="vl num"><b>${fmt(c.diaSpent)}</b> <span class="muted">/ ${fmt(c.diaPlan)}</span></div></div>
+      ${c.cats.filter(x=>x.plan||x.spent).map(x=>catRow(x,c)).join('')||'<div class="empty">Sem dados.</div>'}
+      <div class="cat" style="border-top:1px solid var(--border);margin-top:4px"><div class="ic">Σ</div><div class="nm">Total</div><div class="vl num"><b>${fmt(c.diaSpent)}</b></div></div>
       <div class="hint">Toque numa categoria para filtrar a lista. Os valores orçados vêm da aba Orçamento.</div>
     </div>
   </div>`;
