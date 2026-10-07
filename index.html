@@ -915,8 +915,12 @@ function vInicio(){
   const late=pend.filter(i=>dueInfo(i,ym).cls==='late').length;
   const todaySpent=S.tx.filter(t=>t.date===todayISO()).reduce((s,t)=>s+t.amount,0);
   const nPaid=c.bills.filter(i=>isPaid(i,ym)).length;
-  const debtAct=byGroup('parcela').map(debtInfo).filter(d=>d.remaining>0);
+  const debtAll=byGroup('parcela').map(i=>({d:debtInfo(i),po:(i.payoffs||[]).reduce((s,p)=>s+p.amount+Math.max(0,p.saved||0),0)}));
+  const debtAct=debtAll.map(x=>x.d).filter(d=>d.remaining>0);
   const debtRem=debtAct.reduce((s,d)=>s+d.remVal,0);
+  // quitações/amortizações tiram parcelas do plano; o valor delas conta como pago
+  const debtTot=debtAll.reduce((s,x)=>s+x.d.totalVal+x.po,0);
+  const debtPct=debtTot?(debtTot-debtRem)/debtTot:1;
   const debtLast=debtAct.reduce((m,d)=>d.last>m?d.last:m,'');
   const debtFree=debtLast?ymAdd(debtLast,1):null;
 
@@ -944,7 +948,8 @@ function vInicio(){
     <div class="card kpi span-3 kpi-out" style="cursor:pointer" data-action="tab" data-tab="dividas">
       <div class="k-lbl">Dívidas</div>
       <div class="k-val num">${fmt(debtRem)}</div>
-      <div class="k-sub">${debtFree?`livre de parcelas em <b>${ymLabel(debtFree)}</b>`:'nenhuma dívida ativa 🎉'}</div>
+      <div class="pbar"><i style="width:${debtPct*100}%"></i></div>
+      <div class="k-sub"><b>${pct(debtPct)}</b> pago · ${debtFree?`livre de parcelas em <b>${ymLabel(debtFree)}</b>`:'nenhuma dívida ativa 🎉'}</div>
     </div>
     <div class="card kpi span-3 kpi-bills" style="cursor:pointer" data-action="tab" data-tab="contas">
       <div class="k-lbl">Contas pagas</div>
