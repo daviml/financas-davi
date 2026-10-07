@@ -912,9 +912,6 @@ function vInicio(){
   const c=calc(UI.month),ym=UI.month,isNow=ym===todayYM();
   const pend=c.bills.filter(i=>!isPaid(i,ym)).sort((a,b)=>(a.due||99)-(b.due||99));
   const late=pend.filter(i=>dueInfo(i,ym).cls==='late').length;
-  const diaLeft=Math.max(0,c.diaPlan-c.diaSpent);
-  const daysLeft=isNow?dim(ym)-(+todayISO().slice(8))+1:dim(ym);
-  const perDay=diaLeft/daysLeft;
   const todaySpent=S.tx.filter(t=>t.date===todayISO()).reduce((s,t)=>s+t.amount,0);
   const nPaid=c.bills.filter(i=>isPaid(i,ym)).length;
 
@@ -952,8 +949,8 @@ function vInicio(){
     </div>
 
     <div class="card span-7 c-dia">
-      <h3>🧾 Dia a dia <span class="right t2 num">${fmt(c.diaSpent)} de ${fmt(c.diaPlan)}</span></h3>
-      ${isNow||ym>todayYM()?`<div class="banner info" style="margin-bottom:6px"><div>Você pode gastar <b class="num" style="font-size:16px">${fmt(perDay)}</b> por dia ${isNow?`nos próximos ${daysLeft} dia${daysLeft>1?'s':''}`:'neste mês'} para ficar dentro do orçado.${isNow?` <span class="t2">Hoje: ${fmt(todaySpent)}</span>`:''}</div></div>`:''}
+      <h3>🧾 Dia a dia <span class="right t2 num">${fmt(c.diaSpent)}${c.diaPlan?' de '+fmt(c.diaPlan):''}</span></h3>
+      ${isNow?`<div class="hint" style="margin:-2px 0 6px">Gasto hoje: <b class="num">${fmt(todaySpent)}</b></div>`:''}
       ${c.cats.filter(x=>x.plan>0||x.spent>0).map(catRow).join('')||'<div class="empty">Nenhum gasto neste mês ainda.</div>'}
       ${c.cats.some(x=>!x.plan&&!x.spent)?`<div class="hint">Categorias sem orçamento e sem gastos ficam escondidas. Gastos em categorias sem orçamento reduzem a sobra.</div>`:''}
     </div>
@@ -979,13 +976,14 @@ function vInicio(){
   </div>`;
 }
 function catRow(c){
-  const pct=c.plan?c.spent/c.plan:(c.spent>0?1.01:0);
+  const pct=c.plan?c.spent/c.plan:0;
   const cls=pct>1?'over':pct>.85?'warn':'';
   const rest=c.plan-c.spent;
+  const sub=!c.plan?'<span class="t2" style="font-size:12px">sem orçamento</span>':`<span class="${rest<0?'neg':'t2'}" style="font-size:12px">${rest<0?'passou '+fmt(-rest):'restam '+fmt(rest)}</span>`;
   return `<div class="cat" data-action="filterCat" data-id="${c.item.id}" style="cursor:pointer">
     <div class="ic">${c.item.icon||'•'}</div>
     <div class="nm">${esc(c.item.name)}</div>
-    <div class="vl num"><b>${fmt(c.spent)}</b> <span class="muted">/ ${fmt(c.plan)}</span><br><span class="${rest<0?'neg':'t2'}" style="font-size:12px">${rest<0?'passou '+fmt(-rest):'restam '+fmt(rest)}</span></div>
+    <div class="vl num"><b>${fmt(c.spent)}</b>${c.plan?` <span class="muted">/ ${fmt(c.plan)}</span>`:''}<br>${sub}</div>
     <div class="bar"><i class="${cls}" style="width:${Math.min(100,pct*100)}%"></i></div>
   </div>`;
 }
