@@ -915,6 +915,10 @@ function vInicio(){
   const late=pend.filter(i=>dueInfo(i,ym).cls==='late').length;
   const todaySpent=S.tx.filter(t=>t.date===todayISO()).reduce((s,t)=>s+t.amount,0);
   const nPaid=c.bills.filter(i=>isPaid(i,ym)).length;
+  const debtAct=byGroup('parcela').map(debtInfo).filter(d=>d.remaining>0);
+  const debtRem=debtAct.reduce((s,d)=>s+d.remVal,0);
+  const debtLast=debtAct.reduce((m,d)=>d.last>m?d.last:m,'');
+  const debtFree=debtLast?ymAdd(debtLast,1):null;
 
   const segs=[['Contas fixas',c.fixas,'var(--s1)'],['Dia a dia',c.diaProj,'var(--s2)'],['Parcelas e dívidas',c.parcelas+c.quit,'var(--s3)'],['Reserva',Math.min(c.reserva,Math.max(0,c.sobra)),'var(--s4)']];
   const livre=Math.max(0,c.receita-segs.reduce((s,x)=>s+x[1],0));
@@ -937,10 +941,10 @@ function vInicio(){
       <div class="k-sub">${byGroup('receita').filter(i=>isPaid(i,ym)).length?'recebido: '+fmt(byGroup('receita').filter(i=>isPaid(i,ym)).reduce((s,i)=>s+val(i,ym),0)):'nada recebido ainda'}</div>
       <div style="margin-top:6px;display:flex;gap:12px;flex-wrap:wrap"><button class="link" data-action="newIncome">+ entrada extra</button><button class="link" data-action="tab" data-tab="entradas">ver entradas →</button></div>
     </div>
-    <div class="card kpi span-3 kpi-out">
-      <div class="k-lbl">Já saiu</div>
-      <div class="k-val num">${fmt(c.jaSaiu)}</div>
-      <div class="k-sub">falta sair <b class="num">${fmt(c.vaiSair)}</b></div>
+    <div class="card kpi span-3 kpi-out" style="cursor:pointer" data-action="tab" data-tab="dividas">
+      <div class="k-lbl">Dívidas</div>
+      <div class="k-val num">${fmt(debtRem)}</div>
+      <div class="k-sub">${debtFree?`livre de parcelas em <b>${ymLabel(debtFree)}</b>`:'nenhuma dívida ativa 🎉'}</div>
     </div>
     <div class="card kpi span-3 kpi-bills" style="cursor:pointer" data-action="tab" data-tab="contas">
       <div class="k-lbl">Contas pagas</div>
