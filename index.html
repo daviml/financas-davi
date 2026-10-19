@@ -98,6 +98,12 @@ a.link,button.link{color:var(--accent);background:none;border:0;padding:0;cursor
 a.link:hover,button.link:hover{text-decoration:underline}
 .muted{color:var(--muted)} .t2{color:var(--text-2)}
 .empty{padding:24px;text-align:center;color:var(--muted)}
+.ktiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.ktiles>div{background:var(--surface-2);border-radius:10px;padding:10px 12px;min-width:0}
+.ktiles .k-lbl{color:var(--text-2);font-size:12px}
+.ktiles .k-val{font-size:20px;font-weight:700;letter-spacing:-.02em;margin-top:2px}
+.ktiles .k-sub{color:var(--muted);font-size:11.5px;margin-top:2px}
+@media (max-width:640px){.ktiles{grid-template-columns:1fr 1fr}.ktiles .k-val{font-size:18px}}
 
 /* barras de progresso */
 .cat{display:grid;grid-template-columns:28px 1fr auto;gap:4px 10px;align-items:center;padding:8px 0;border-bottom:1px dashed var(--border)}
@@ -771,6 +777,69 @@ function calc(ym){
     bills,billsNoRes,paidBills,paidAmt,billsAmt,pctParc:salary?parcelas/salary:0,txs,
     jaSaiu:paidAmt+diaSpent, vaiSair:(billsAmt-paidAmt)+Math.max(0,diaProj-diaSpent)};
 }
+/* ---------- Carro: km e consumo (lançados junto com cada abastecimento) ---------- */
+// O km do painel é anotado no abastecimento. Consumo = km entre duas leituras ÷ litros comprados depois da primeira
+// até a segunda (inclusive). Somando vários abastecimentos, os parciais se compensam.
+const isFuel=it=>!!it&&it.group==='diadia'&&(it.icon==='⛽'||/gasolin|combust|etanol|[áa]lcool/i.test(it.name));
+const txOrd=(a,b)=>a.date.localeCompare(b.date)||(a.ts||0)-(b.ts||0);
+const fuelTx=()=>S.tx.filter(t=>isFuel(itemById(t.cat))).sort(txOrd);
+const fmtKm=n=>Math.round(n).toLocaleString('pt-BR')+' km';
+const fmtKml=n=>n.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+' km/l';
+const fmtL=n=>n.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+' L';
+function parsePpl(s){s=String(s||'').replace(/R\$|\s/g,'');if(s.includes(','))s=s.replace(/\./g,'').replace(',','.');const n=parseFloat(s);return n>0?Math.round(n*1000)/1000:0}
+const parseKm=s=>{const n=parseInt(String(s||'').replace(/\D/g,''),10);return n>0?n:0};
+function fuelSpan(L,ia,ib){
+  const a=L[ia],b=L[ib],km=b.km-a.km;if(!(km>0))return null;
+  const seg=L.slice(ia+1,ib+1),cost=round2(seg.reduce((s,t)=>s+t.amount,0));
+  const known=seg.filter(t=>t.ppl>0);
+  const refPpl=known.length?known.reduce((s,t)=>s+t.ppl,0)/known.length:(L.slice(0,ib+1).reverse().find(t=>t.ppl>0)||{}).ppl;
+  const liters=refPpl?seg.reduce((s,t)=>s+t.amount/(t.ppl||refPpl),0):0;
+  return{km,cost,liters,kml:liters?km/liters:null,rkm:cost/km,days:Math.max(1,daysBetween(a.date,b.date)),n:seg.length,est:known.length<seg.length,from:a,to:b};
+}
+function fuelStats(ym){
+  const L=fuelTx(),R=L.map((t,i)=>t.km>0?i:-1).filter(i=>i>=0);
+  const o={L,readings:R.length,last:R.length?L[R[R.length-1]]:null};
+  if(R.length<2)return o;
+  // últimos abastecimentos (até 5 trechos) e o período anterior, para comparar
+  const r0=Math.max(0,R.length-6);
+  o.recent=fuelSpan(L,R[r0],R[R.length-1]);
+  if(r0>=3)o.prev=fuelSpan(L,R[Math.max(0,r0-5)],R[r0]);
+  if(o.recent&&o.prev&&o.recent.kml&&o.prev.kml&&o.recent.kml<o.prev.kml*.85)o.drop=1-o.recent.kml/o.prev.kml;
+  // mês: da última leitura antes do mês até a última leitura dentro dele
+  const start=ym+'-01',end=ym+'-'+pad(dim(ym));
+  const inM=R.filter(i=>L[i].date>=start&&L[i].date<=end),before=R.filter(i=>L[i].date<start);
+  if(inM.length){const ia=before.length?before[before.length-1]:inM[0],ib=inM[inM.length-1];if(ib>ia)o.month=fuelSpan(L,ia,ib)}
+  // ritmo para prever o fim do mês: os últimos abastecimentos (refletem o consumo atual do carro)
+  if(o.recent&&o.recent.days>=3)o.base=o.recent;
+  return o;
+}
+function carCard(c){
+  const ym=c.ym,F=fuelStats(ym);if(!F.readings)return'';
+  const cat=c.cats.find(x=>isFuel(x.item)),spent=cat?cat.spent:0,plan=cat?cat.plan:0;
+  const isNow=ym===todayYM(),today=Number(todayISO().slice(8,10)),remDays=dim(ym)-today;
+  const tile=(l,v,s)=>`<div><div class="k-lbl">${l}</div><div class="k-val num">${v}</div><div class="k-sub">${s||''}</div></div>`;
+  if(!F.recent)return`<div class="card span-12 c-car"><h3>⛽ Carro <span class="right t2 num">${fmtKm(F.last.km)}</span></h3>
+    <div class="hint" style="margin:0">Último registro em ${dmy(F.last.date)}. Lance o km do painel no próximo abastecimento para calcular o consumo.</div></div>`;
+  const R=F.recent;
+  let proj=null,projSub='';
+  if(isNow&&F.base){proj=spent+F.base.cost/F.base.days*Math.max(0,remDays);projSub='pelo ritmo dos últimos abastecimentos'}
+  else if(isNow&&today>0){proj=spent/today*dim(ym);projSub='pelo ritmo de gastos do mês'}
+  const projTile=proj!=null?tile('Previsão da gasolina no mês',`<span class="${plan&&proj>plan?'neg':''}">${fmt(proj)}</span>`,(plan?`meta ${fmt(plan)} · `:'')+projSub)
+    :tile('Gasolina no mês',fmt(spent),plan?`meta ${fmt(plan)}`:'');
+  return`<div class="card span-12 c-car">
+    <h3>⛽ Carro <span class="right t2 num">${fmtKm(F.last.km)} em ${dmy(F.last.date)}</span></h3>
+    ${F.drop?`<div class="banner warn" style="margin:0 0 10px">O consumo piorou ${pct(F.drop)} (${fmtKml(F.prev.kml)} → ${fmtKml(R.kml)}). Vale olhar pneus, válvula termostática e sensores.</div>`:''}
+    <div class="ktiles">
+      ${tile('Consumo',R.kml?fmtKml(R.kml):'–',R.kml?`últimos ${R.n} abastec. · ${fmtKm(R.km)}${F.prev&&F.prev.kml?` · antes ${fmtKml(F.prev.kml)}`:''}`:'informe o preço por litro')}
+      ${tile('Custo por km',fmt(R.rkm),`${fmt(R.rkm*100)} a cada 100 km`)}
+      ${tile('Rodado no mês',F.month?fmtKm(F.month.km):'–',F.base?`≈ ${fmtKm(F.base.km/F.base.days)}/dia`:'')}
+      ${projTile}
+    </div>
+    ${R.est?`<div class="hint">Alguns abastecimentos estão sem preço por litro — os litros deles foram estimados pelo preço médio.</div>`:''}
+    <div class="hint">Quanto mais abastecimentos com km, mais preciso. Para a conta fechar melhor, abasteça sempre com o ponteiro mais ou menos no mesmo nível.</div>
+  </div>`;
+}
+
 function dueInfo(it,ym){
   const s=st(it,ym);
   if(s&&s.paid)return{cls:'paid',text:(it.group==='reserva'?'Guardado':it.group==='receita'?'Recebido':'Pago')+(s.date?' em '+dmy(s.date):'')};
@@ -979,6 +1048,8 @@ function vInicio(){
       <div class="hint">Parcelas = ${pct(c.pctParc)} do salário.</div>
     </div>
 
+    ${carCard(c)}
+
     <div class="card span-12 c-recent">
       <h3>🕑 Últimos gastos <span class="right"><button class="link" data-action="tab" data-tab="lanc">ver todos →</button></span></h3>
       ${recent.length?recent.map(txRow).join(''):`<div class="empty">Nenhum gasto lançado em ${ymLong(ym)}. Use o botão <b>+ Novo gasto</b> (ou aperte <b>N</b>).</div>`}
@@ -1016,7 +1087,7 @@ function txRow(t){
   return `<div class="tx" data-action="editTx" data-id="${t.id}">
     <div class="ic">${it?.icon||'❔'}</div>
     <div class="info"><div class="nm">${esc(t.desc||it?.name||'Gasto')}</div>
-      <div class="meta">${esc(it?.name||'Sem categoria')} · ${WD[date.getDay()]} ${dmy(t.date)} · ${methodLabel(t.method)}</div></div>
+      <div class="meta">${esc(it?.name||'Sem categoria')} · ${WD[date.getDay()]} ${dmy(t.date)} · ${methodLabel(t.method)}${t.km?' · '+fmtKm(t.km):''}${t.ppl?' · '+fmtL(t.amount/t.ppl):''}</div></div>
     <div class="amt num">${fmt(t.amount)}</div>
   </div>`;
 }
@@ -1534,6 +1605,7 @@ function txModal(t){
   const dd=byGroup('diadia');
   t=t||{id:uid(),date:(UI.month===todayYM())?todayISO():UI.month+'-01',amount:0,cat:UI.filterCat&&itemById(UI.filterCat)?UI.filterCat:(S.lastCat&&itemById(S.lastCat)?S.lastCat:dd[0]?.id),method:null,desc:''};
   let cat=t.cat,method=t.method||itemById(cat)?.defMethod||S.lastMethod||'debito';
+  const lastPpl=([...fuelTx()].reverse().find(x=>x.ppl>0)||{}).ppl||0;
   openModal(`
     <div class="m-hd"><h3>${isNew?'Novo gasto':'Editar gasto'}</h3><button class="x" data-close>×</button></div>
     <div class="m-bd">
@@ -1546,6 +1618,11 @@ function txModal(t){
         <div><label class="f">Data</label><input class="in" type="date" id="txDate" value="${t.date}"></div>
         <div><label class="f">Descrição (opcional)</label><input class="in" id="txDesc" value="${esc(t.desc)}" placeholder="Ex.: Posto Shell" list="descList"></div>
       </div>
+      <div class="two" id="txFuel" style="display:none">
+        <div><label class="f">Km do painel (opcional)</label><input class="in num" id="txKm" inputmode="numeric" placeholder="Ex.: 154.320" value="${t.km?t.km.toLocaleString('pt-BR'):''}" autocomplete="off"></div>
+        <div><label class="f">Preço por litro (opcional)</label><input class="in num" id="txPpl" inputmode="decimal" placeholder="Ex.: 6,29" value="${(t.ppl||(isNew?lastPpl:0))?String(t.ppl||lastPpl).replace('.',','):''}" autocomplete="off"></div>
+      </div>
+      <div class="hint" id="txFuelHint"></div>
       <datalist id="descList">${[...new Set(S.tx.map(x=>x.desc).filter(Boolean))].slice(-50).map(d=>`<option value="${esc(d)}">`).join('')}</datalist>
       <div class="hint" id="txHint"></div>
     </div>
@@ -1558,7 +1635,23 @@ function txModal(t){
       const amt=m.querySelector('#txAmt');setTimeout(()=>amt.focus(),30);
       const hint=()=>{const c=calc(m.querySelector('#txDate').value.slice(0,7));const x=c.cats.find(z=>z.item.id===cat);const a=parseMoney(amt.value);
         if(!monthsList().includes(m.querySelector('#txDate').value.slice(0,7))){m.querySelector('#txHint').innerHTML='⚠ Esta data está fora do período do plano ('+ymLabel(S.settings.start)+' a '+ymLabel(S.settings.end)+') — o gasto não vai aparecer nos painéis.';return}
-        if(x)m.querySelector('#txHint').innerHTML=x.plan?`${esc(x.item.name)}: depois deste gasto restam <b class="${x.plan-x.spent-a<0?'neg':''}">${fmt(x.plan-x.spent-a+(isNew?0:(t.cat===cat?t.amount:0)))}</b> de ${fmt(x.plan)}`:`Categoria sem orçamento — este gasto reduz a sobra do mês.`};
+        if(x)m.querySelector('#txHint').innerHTML=x.plan?`${esc(x.item.name)}: depois deste gasto restam <b class="${x.plan-x.spent-a<0?'neg':''}">${fmt(x.plan-x.spent-a+(isNew?0:(t.cat===cat?t.amount:0)))}</b> de ${fmt(x.plan)}`:`Categoria sem orçamento — este gasto reduz a sobra do mês.`;
+        fuelHint()};
+      const kmIn=m.querySelector('#txKm'),pplIn=m.querySelector('#txPpl'),fh=m.querySelector('#txFuelHint');
+      const fuelHint=()=>{
+        const on=isFuel(itemById(cat));m.querySelector('#txFuel').style.display=on?'':'none';
+        if(!on){fh.innerHTML='';return}
+        const a=parseMoney(amt.value),km=parseKm(kmIn.value),ppl=parsePpl(pplIn.value),d=m.querySelector('#txDate').value||todayISO();
+        const parts=[];
+        if(a>0&&ppl>0)parts.push(`≈ <b>${fmtL(a/ppl)}</b>`);
+        if(km){
+          const me={date:d,ts:t.ts||Date.now()};
+          const prev=fuelTx().filter(x=>x.id!==t.id&&x.km>0&&txOrd(x,me)<0).pop();
+          if(prev)parts.push(km>prev.km?`+${fmtKm(km-prev.km)} desde ${dmy(prev.date)}`:`<span class="neg">⚠ menor que o registro de ${dmy(prev.date)} (${fmtKm(prev.km)})</span>`);
+        }
+        fh.innerHTML=parts.join(' · ')||'Anote o km do painel na hora de abastecer — o app calcula o consumo (km/l) e o custo por km.';
+      };
+      kmIn.oninput=fuelHint;pplIn.oninput=fuelHint;
       m.querySelector('#txCats').onclick=e=>{const b=e.target.closest('[data-cat]');if(!b)return;cat=b.dataset.cat;m.querySelectorAll('#txCats .chip').forEach(c=>c.classList.toggle('on',c===b));const dm=itemById(cat)?.defMethod;if(dm){method=dm;m.querySelectorAll('#txMeth .chip').forEach(c=>c.classList.toggle('on',c.dataset.m===dm))}hint()};
       m.querySelector('#txMeth').onclick=e=>{const b=e.target.closest('[data-m]');if(!b)return;method=b.dataset.m;m.querySelectorAll('#txMeth .chip').forEach(c=>c.classList.toggle('on',c===b));hint()};
       amt.oninput=hint;m.querySelector('#txDate').onchange=hint;hint();
@@ -1567,6 +1660,8 @@ function txModal(t){
         const date=m.querySelector('#txDate').value||todayISO();
         snap();
         const rec={...t,amount:a,cat,method,date,desc:m.querySelector('#txDesc').value.trim(),ts:t.ts||Date.now()};
+        delete rec.km;delete rec.ppl;
+        if(isFuel(itemById(cat))){const km=parseKm(kmIn.value),ppl=parsePpl(pplIn.value);if(km)rec.km=km;if(ppl)rec.ppl=ppl}
         if(isNew)S.tx.push(rec);else S.tx[S.tx.findIndex(x=>x.id===t.id)]=rec;
         S.lastMethod=method;S.lastCat=cat;save();
         if(date.slice(0,7)!==UI.month&&monthsList().includes(date.slice(0,7))&&!more)UI.month=date.slice(0,7);
@@ -1851,7 +1946,7 @@ function exportJson(){
   const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='financas-backup-'+todayISO()+'.json';a.click();URL.revokeObjectURL(a.href);
 }
 function exportCsv(){
-  const rows=[['Data','Valor','Categoria','Forma','Descrição']].concat([...S.tx].sort((a,b)=>a.date.localeCompare(b.date)).map(t=>[t.date,String(t.amount).replace('.',','),itemById(t.cat)?.name||'',methodLabel(t.method),t.desc||'']));
+  const rows=[['Data','Valor','Categoria','Forma','Descrição','Km','R$/litro']].concat([...S.tx].sort((a,b)=>a.date.localeCompare(b.date)).map(t=>[t.date,String(t.amount).replace('.',','),itemById(t.cat)?.name||'',methodLabel(t.method),t.desc||'',t.km||'',t.ppl?String(t.ppl).replace('.',','):'']));
   const csv='﻿'+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(';')).join('\r\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='gastos-'+todayISO()+'.csv';a.click();
 }
