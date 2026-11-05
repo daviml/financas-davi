@@ -398,6 +398,7 @@ nav.bottom{display:none}
     <button data-tab="orc">Orçamento</button>
     <button data-tab="dividas">Dívidas</button>
     <button data-tab="reserva">Reserva</button>
+    <button data-tab="serasa">Serasa</button>
     <button data-tab="ajustes">Ajustes & backup</button>
   </nav>
 </header>
@@ -417,6 +418,7 @@ nav.bottom{display:none}
   <button data-tab="entradas"><span>💰</span>Entradas</button>
   <button data-tab="orc"><span>📊</span>Orçamento (planilha)</button>
   <button data-tab="dividas"><span>💳</span>Dívidas</button>
+  <button data-tab="serasa"><span>🚫</span>Serasa (à parte)</button>
   <button data-tab="ajustes"><span>⚙️</span>Ajustes, backup e sincronização</button>
   <button data-action="theme"><span>◐</span>Trocar tema claro/escuro</button>
 </div>
@@ -550,6 +552,7 @@ function recs(D){
   (D.items||[]).forEach(x=>o['it:'+x.id]=x);
   (D.tx||[]).forEach(x=>o['tx:'+x.id]=x);
   (D.resAdj||[]).forEach(x=>o['ra:'+x.id]=x);
+  (D.serasa||[]).forEach(x=>o['sr:'+x.id]=x);
   Object.entries(D.status||{}).forEach(([k,x])=>o['st:'+k]=x);
   if(D.settings)o.set=D.settings;
   return o;
@@ -574,12 +577,13 @@ function mergeData(L,R){
     out[k]=w;
   }
   for(const k in del)if(out[k])delete del[k];
-  const M={...L,items:[],tx:[],resAdj:[],status:{},del};
+  const M={...L,items:[],tx:[],resAdj:[],serasa:[],status:{},del};
   const seen=new Set();
   [...(L.items||[]),...(R.items||[])].forEach(i=>{const k='it:'+i.id;if(out[k]&&!seen.has(k)){seen.add(k);M.items.push(out[k])}});
   for(const k in out){
     if(k.startsWith('tx:'))M.tx.push(out[k]);
     else if(k.startsWith('ra:'))M.resAdj.push(out[k]);
+    else if(k.startsWith('sr:'))M.serasa.push(out[k]);
     else if(k.startsWith('st:'))M.status[k.slice(3)]=out[k];
     else if(k==='set')M.settings=out[k];
   }
@@ -745,7 +749,11 @@ const folhaCommitted=(it,ym)=>!!it.folha&&todayISO()>=ymAdd(ym,-1)+'-'+pad(FOLHA
 const openParcels=it=>monthsList().filter(m=>planned(it,m)>0&&!isPaid(it,m)&&!folhaCommitted(it,m));
 const val=(it,ym)=>{const s=st(it,ym);return s&&s.amount!=null?s.amount:planned(it,ym)};
 const resAdjIn=m=>(S.resAdj||[]).filter(a=>clampMonth(a.date.slice(0,7))===m).reduce((s,a)=>s+a.amount,0);
-const txOf=ym=>S.tx.filter(t=>t.date.slice(0,7)===ym);
+// Crédito é o Nubank da mãe (vence dia 6): o gasto conta no mês em que a fatura é paga, não no dia da compra.
+// Compra a partir do dia CARD_FECHA cai na fatura de dois meses depois.
+const CARD_FECHA=29;
+const txMonth=t=>t.method==='credito'?ymAdd(t.date.slice(0,7),+t.date.slice(8,10)>=CARD_FECHA?2:1):t.date.slice(0,7);
+const txOf=ym=>S.tx.filter(t=>txMonth(t)===ym);
 
 function calc(ym){
   const sumV=g=>byGroup(g).reduce((s,i)=>s+val(i,ym),0);
@@ -958,14 +966,14 @@ function barChart(el,{labels,values,height=220,color='var(--s1)',yFmt=fmt,tip,hi
    ========================================================= */
 function render(){
   document.querySelectorAll('#tabs button,#bottomNav button[data-tab],#moreSheet button[data-tab]').forEach(b=>b.classList.toggle('on',b.dataset.tab===UI.tab));
-  $('#bottomNav [data-more]').classList.toggle('on',['entradas','orc','dividas','ajustes'].includes(UI.tab));
+  $('#bottomNav [data-more]').classList.toggle('on',['entradas','orc','dividas','serasa','ajustes'].includes(UI.tab));
   $('#moreSheet').classList.remove('open');
   $('#mLbl').textContent=ymLong(UI.month);
   $('#mSub').textContent=UI.month===todayYM()?'mês atual':(UI.month<todayYM()?'mês passado':'planejamento');
   if(location.hash!=='#'+UI.tab)history.replaceState(null,'','#'+UI.tab);
   sessionStorage.setItem('fin-ui',JSON.stringify({tab:UI.tab,month:UI.month,sheetMode:UI.sheetMode,sheetCompact:UI.sheetCompact,sheetStart:UI.sheetStart}));
   const v=$('#view');
-  const fn={inicio:vInicio,entradas:vEntradas,lanc:vLanc,contas:vContas,orc:vOrc,dividas:vDividas,reserva:vReserva,ajustes:vAjustes}[UI.tab]||vInicio;
+  const fn={inicio:vInicio,entradas:vEntradas,lanc:vLanc,contas:vContas,orc:vOrc,dividas:vDividas,serasa:vSerasa,reserva:vReserva,ajustes:vAjustes}[UI.tab]||vInicio;
   v.innerHTML=banners()+fn();
   if(fn.after)fn.after();
   setSaveState();
@@ -1087,7 +1095,7 @@ function txRow(t){
   return `<div class="tx" data-action="editTx" data-id="${t.id}">
     <div class="ic">${it?.icon||'❔'}</div>
     <div class="info"><div class="nm">${esc(t.desc||it?.name||'Gasto')}</div>
-      <div class="meta">${esc(it?.name||'Sem categoria')} · ${WD[date.getDay()]} ${dmy(t.date)} · ${methodLabel(t.method)}${t.km?' · '+fmtKm(t.km):''}${t.ppl?' · '+fmtL(t.amount/t.ppl):''}</div></div>
+      <div class="meta">${esc(it?.name||'Sem categoria')} · ${WD[date.getDay()]} ${dmy(t.date)} · ${methodLabel(t.method)}${t.method==='credito'?' (fatura '+ymLabel(txMonth(t))+')':''}${t.km?' · '+fmtKm(t.km):''}${t.ppl?' · '+fmtL(t.amount/t.ppl):''}</div></div>
     <div class="amt num">${fmt(t.amount)}</div>
   </div>`;
 }
@@ -1360,29 +1368,34 @@ function payToCards(){
     const cred=byGroup('receita').filter(i=>i.payFrom===who);
     const credMon=cred.filter(i=>planned(i,ym)>0||st(i,ym));
     const credTot=credMon.reduce((s,i)=>s+val(i,ym),0),credOpen=credMon.filter(i=>!isPaid(i,ym)).reduce((s,i)=>s+val(i,ym),0);
-    const credAll=cred.reduce((s,i)=>s+monthsList().filter(m=>planned(i,m)>0&&!isPaid(i,m)).reduce((a,m)=>a+val(i,m),0),0);
+    // conta o que falta deste mês em diante, mais o que ficou atrasado antes de hoje; o que já acabou some da lista
+    const tm=todayYM(),open=i=>monthsList().filter(m=>(m>=ym||m<tm)&&planned(i,m)>0&&!isPaid(i,m));
+    const remOf=i=>open(i).reduce((a,m)=>a+val(i,m),0);
+    const credShow=cred.filter(i=>open(i).length||planned(i,ym)>0||st(i,ym));
+    const credAll=cred.reduce((s,i)=>s+remOf(i),0);
     const mon=list.filter(i=>planned(i,ym)>0||st(i,ym));
     const monTot=mon.reduce((s,i)=>s+val(i,ym),0),sent=mon.filter(i=>isPaid(i,ym));
     const sentTot=sent.reduce((s,i)=>s+val(i,ym),0);
-    const infos=list.map(i=>({i,d:debtInfo(i)}));
-    const owed=infos.reduce((s,x)=>s+x.d.remVal,0);
+    const infos=list.map(i=>({i,d:debtInfo(i),rem:remOf(i)}));
+    const owed=infos.reduce((s,x)=>s+x.rem,0);
     const last=infos.map(x=>x.d.last).filter(Boolean).sort().pop();
+    const shown=infos.filter(x=>x.rem>0.005||planned(x.i,ym)>0||st(x.i,ym));
     const nx=ymAdd(ym,1),nxTot=list.reduce((s,i)=>s+val(i,nx),0)-byGroup('receita').filter(i=>i.payFrom===who).reduce((s,i)=>s+val(i,nx),0);
     const all=sent.length===mon.length&&mon.length>0&&!credOpen;
     const net=monTot-sentTot-credOpen;
     return `<div class="card span-12" style="border-color:#e0a030">
-      <h3>💛 Repasse para ${esc(who)} <span class="right t2">${list.length} dívida${list.length!==1?'s':''} no nome dela</span></h3>
+      <h3>💛 Repasse para ${esc(who)} <span class="right t2">${shown.length} dívida${shown.length!==1?'s':''} no nome dela</span></h3>
       <div class="grid2" style="gap:12px;margin-bottom:6px">
         <div class="kpi span-4"><div class="k-lbl">Mandar em ${ymLong(ym)}${credTot?' (líquido)':''}</div><div class="k-val num">${fmt(monTot-credTot)}</div>
           ${credTot?`<div class="k-sub">parcelas ${fmt(monTot)} − <b class="pos">${fmt(credTot)}</b> que ${esc(who)} te deve (${credMon.map(i=>esc(i.name.replace(new RegExp('^'+who+'\\s*[–-]\\s*'),'').replace(/\s*\(.*\)\s*$/,''))).join(', ')})</div>`:''}
           <div class="k-sub">${mon.length?(all?`<span class="pos" style="font-weight:700">✓ enviado</span>`:sent.length||credTot-credOpen?`${fmt(sentTot-(credTot-credOpen))} já acertado · falta <b>${fmt(net)}</b>`:'ainda não enviado'):'nada neste mês'}</div>
           ${mon.length&&!all?`<button class="btn sm good" style="margin-top:8px" data-action="payToSend" data-who="${esc(who)}">✓ Marcar ${fmt(net)} como enviado</button>`:''}</div>
-        <div class="kpi span-4"><div class="k-lbl">Devo no total para ${esc(who)}</div><div class="k-val num">${fmt(owed-credAll)}</div><div class="k-sub">${credAll?`parcelas ${fmt(owed)} − ${fmt(credAll)} que ${esc(who)} te deve`:'parcelas ainda não enviadas, de todos os meses'}</div></div>
+        <div class="kpi span-4"><div class="k-lbl">Devo no total para ${esc(who)}</div><div class="k-val num">${fmt(owed-credAll)}</div><div class="k-sub">${credAll?`parcelas ${fmt(owed)} − ${fmt(credAll)} que ${esc(who)} te deve`:'parcelas ainda não enviadas, deste mês em diante'}</div></div>
         <div class="kpi span-4"><div class="k-lbl">Último repasse</div><div class="k-val">${last?ymLong(last):'—'}</div><div class="k-sub">${last?'faltam '+Math.max(0,monthsDiff(ym,last)+1)+' meses (contando este) · próximo mês: '+fmt(nxTot):''}</div></div>
       </div>
       <div style="overflow:auto"><table class="items num"><thead><tr><th>Dívida</th><th style="text-align:right">${ymLabel(ym)}</th><th style="text-align:right">Restante</th><th class="hide-m" style="text-align:right">Termina</th></tr></thead><tbody>
-        ${infos.sort((a,b)=>(a.d.last||'').localeCompare(b.d.last||'')).map(({i,d})=>`<tr><td>${isPaid(i,ym)?'✓ ':''}${esc(i.name)}</td><td style="text-align:right" class="${isPaid(i,ym)?'pos':planned(i,ym)?'':'muted'}">${planned(i,ym)||st(i,ym)?fmt(val(i,ym)):'–'}</td><td style="text-align:right">${d.remVal?fmt(d.remVal):'<span class="pos">quitada</span>'}</td><td style="text-align:right" class="t2 hide-m">${d.last?ymLabel(d.last):'–'}</td></tr>`).join('')}
-        ${cred.map(i=>{const rest=monthsList().filter(m=>planned(i,m)>0&&!isPaid(i,m));return`<tr class="pos"><td>${isPaid(i,ym)?'✓ ':''}${esc(i.name)}</td><td style="text-align:right">${planned(i,ym)?'− '+fmt(val(i,ym)):'–'}</td><td style="text-align:right">${rest.length?'− '+fmt(rest.reduce((a,m)=>a+val(i,m),0)):'recebido'}</td><td style="text-align:right" class="t2 hide-m">${rest.length?ymLabel(rest[rest.length-1]):'–'}</td></tr>`}).join('')}
+        ${shown.sort((a,b)=>(a.d.last||'').localeCompare(b.d.last||'')).map(({i,d,rem})=>`<tr><td>${isPaid(i,ym)?'✓ ':''}${esc(i.name)}</td><td style="text-align:right" class="${isPaid(i,ym)?'pos':planned(i,ym)?'':'muted'}">${planned(i,ym)||st(i,ym)?fmt(val(i,ym)):'–'}</td><td style="text-align:right">${rem>0.005?fmt(rem):'<span class="pos">quitada</span>'}</td><td style="text-align:right" class="t2 hide-m">${d.last?ymLabel(d.last):'–'}</td></tr>`).join('')}
+        ${credShow.map(i=>{const rest=open(i);return`<tr class="pos"><td>${isPaid(i,ym)?'✓ ':''}${esc(i.name)}</td><td style="text-align:right">${planned(i,ym)?'− '+fmt(val(i,ym)):'–'}</td><td style="text-align:right">${rest.length?'− '+fmt(rest.reduce((a,m)=>a+val(i,m),0)):'recebido'}</td><td style="text-align:right" class="t2 hide-m">${rest.length?ymLabel(rest[rest.length-1]):'–'}</td></tr>`}).join('')}
         <tr style="font-weight:700"><td>Total</td><td style="text-align:right">${fmt(monTot-credTot)}</td><td style="text-align:right">${fmt(owed-credAll)}</td><td class="hide-m"></td></tr>
       </tbody></table></div>
     </div>`;
@@ -1403,6 +1416,73 @@ vDividas.after=()=>{
     tip:i=>`<div class="r"><span>Parcelas</span><span class="num">${fmt(cs[i].parcelas)}</span></div><div class="r"><span>% do salário</span><span class="num">${pct(cs[i].pctParc)}</span></div>`,
     onClick:m=>{UI.month=m;UI.tab='contas';render()}});
 };
+
+/* ---------- Serasa ---------- */
+// À parte: dívidas negativadas/atrasadas que ainda não serão pagas. Ficam em S.serasa e não entram em nenhuma conta do app.
+const SR_ST=[['aberta','Em aberto'],['acordo','Em acordo'],['quitada','Quitada']];
+const srCost=d=>d.oferta!=null?d.oferta:(d.valor||0);
+function vSerasa(){
+  const L=S.serasa||[],open=L.filter(d=>d.status!=='quitada');
+  const tot=open.reduce((s,d)=>s+(d.valor||0),0),cost=open.reduce((s,d)=>s+srCost(d),0);
+  const neg=open.filter(d=>d.neg).length,last=L.map(d=>d.consulta).filter(Boolean).sort().pop();
+  const rows=[...L].sort((a,b)=>(a.status==='quitada')-(b.status==='quitada')||srCost(a)-srCost(b));
+  return `
+  <h2 class="title">Serasa</h2>
+  <p class="sub">À parte: estas dívidas não entram na sobra, nas parcelas nem em nenhuma outra conta do app.${last?' Ofertas consultadas em '+dmy(last)+'/'+last.slice(2,4)+'.':''}</p>
+  <div class="grid2">
+    <div class="card kpi hero span-4"><div class="k-lbl">Cobrado no Serasa</div><div class="k-val num">${fmt(tot)}</div><div class="k-sub">${open.length} dívida${open.length!==1?'s':''} em aberto · ${neg} negativada${neg!==1?'s':''}</div></div>
+    <div class="card kpi span-4" style="border-color:var(--paid-strong)"><div class="k-lbl">Para limpar tudo com as ofertas</div><div class="k-val num pos">${fmt(cost)}</div><div class="k-sub">dívida sem oferta conta pelo valor cheio</div></div>
+    <div class="card kpi span-4"><div class="k-lbl">Desconto das ofertas</div><div class="k-val num">${fmt(tot-cost)}</div><div class="k-sub">${pct(tot?(tot-cost)/tot:0)} do total</div></div>
+    <div class="card span-12">
+      <h3>Dívidas <span class="right"><button class="link" data-action="srEdit">+ nova dívida</button></span></h3>
+      ${rows.map(srRow).join('')||'<div class="empty">Nenhuma dívida cadastrada.</div>'}
+      <div class="hint">Da mais barata para limpar até a mais cara. Toque numa dívida para atualizar a oferta ou a situação.</div>
+    </div>
+  </div>`;
+}
+function srRow(d){
+  const off=d.oferta!=null&&d.valor?1-d.oferta/d.valor:0;
+  const stl=(SR_ST.find(x=>x[0]===d.status)||[])[1];
+  return `<div class="debt ${d.status==='quitada'?'done':''}" data-action="srEdit" data-id="${d.id}" style="cursor:pointer">
+    <div class="row1"><span class="nm">${esc(d.credor)}${d.neg?' <span class="pill" style="background:#ffe1e1;color:#9b1c1c">negativada</span>':''}${d.status!=='aberta'&&stl?` <span class="pill">${stl}</span>`:''}</span>
+      <span class="num" style="text-align:right">${d.oferta!=null?`<b class="pos">${fmt(d.oferta)}</b> <span class="muted">oferta</span><br><span class="muted"><s>${fmt(d.valor)}</s> · −${pct(off)}</span>`:`<b>${d.valor!=null?fmt(d.valor):'—'}</b> <span class="muted">${d.valor!=null?'sem oferta':'valor não informado'}</span>`}</span></div>
+    <div class="meta">${d.desc?`<span>${esc(d.desc)}</span>`:''}${d.obs?`<span>${esc(d.obs)}</span>`:''}${d.consulta?`<span>consultado em ${dmy(d.consulta)}/${d.consulta.slice(2,4)}</span>`:''}</div>
+  </div>`;
+}
+function srModal(d){
+  const isNew=!d;
+  d=d||{id:uid(),credor:'',desc:'',valor:null,oferta:null,neg:true,status:'aberta',consulta:todayISO(),obs:''};
+  openModal(`
+    <div class="m-hd"><h3>${isNew?'Nova dívida no Serasa':esc(d.credor)}</h3><button class="x" data-close>×</button></div>
+    <div class="m-bd">
+      <div class="two">
+        <div><label class="f">Credor</label><input class="in" id="srCred" value="${esc(d.credor)}"></div>
+        <div><label class="f">Descrição</label><input class="in" id="srDesc" value="${esc(d.desc||'')}" placeholder="Ex.: conta atrasada no CPF"></div>
+      </div>
+      <div class="two">
+        <div><label class="f">Valor cobrado</label><input class="in num" id="srVal" inputmode="decimal" value="${d.valor!=null?NUM.format(d.valor):''}"></div>
+        <div><label class="f">Oferta do Limpa Nome</label><input class="in num" id="srOff" inputmode="decimal" value="${d.oferta!=null?NUM.format(d.oferta):''}" placeholder="sem oferta"></div>
+      </div>
+      <div class="two">
+        <div><label class="f">Situação</label><select class="in" id="srSt">${SR_ST.map(([k,l])=>`<option value="${k}" ${k===d.status?'selected':''}>${l}</option>`).join('')}</select></div>
+        <div><label class="f">Consultado em</label><input class="in" type="date" id="srDate" value="${d.consulta||todayISO()}"></div>
+      </div>
+      <label class="check"><input type="checkbox" id="srNeg" ${d.neg?'checked':''}> Negativada (nome sujo)</label>
+      <label class="f">Observação</label><input class="in" id="srObs" value="${esc(d.obs||'')}">
+      <div class="hint">Não entra em nenhuma conta do app.</div>
+    </div>
+    <div class="m-ft">${isNew?'':'<button class="btn" id="srDel" style="margin-right:auto">Excluir</button>'}<button class="btn" data-close>Cancelar</button><button class="btn primary" id="srSave">Salvar</button></div>`,m=>{
+      const q=x=>m.querySelector(x);
+      const money=x=>{const v=q(x).value.trim();return v?round2(parseMoney(v)):null};
+      q('#srSave').onclick=()=>{
+        const credor=q('#srCred').value.trim();if(!credor){alert('Informe o credor.');return}
+        const rec={...d,credor,desc:q('#srDesc').value.trim(),valor:money('#srVal'),oferta:money('#srOff'),status:q('#srSt').value,consulta:q('#srDate').value||todayISO(),neg:q('#srNeg').checked,obs:q('#srObs').value.trim()};
+        snap();S.serasa=S.serasa||[];const i=S.serasa.findIndex(x=>x.id===d.id);if(i<0)S.serasa.push(rec);else S.serasa[i]=rec;
+        save();closeModal();render();toast(isNew?'Dívida adicionada':'Dívida atualizada',true);
+      };
+      const del=q('#srDel');if(del)del.onclick=()=>{if(!confirm('Excluir esta dívida do Serasa?'))return;snap();S.serasa=S.serasa.filter(x=>x.id!==d.id);save();closeModal();render();toast('Dívida excluída',true)};
+    });
+}
 
 /* ---------- Reserva ---------- */
 // Reserva mês a mês, com rendimento da poupança (juros sobre o saldo do mês anterior + aporte do mês)
@@ -1991,6 +2071,7 @@ document.addEventListener('click',e=>{
     case 'newIncome':incomeModal();break;
     case 'payoff':payoffModal(itemById(id));break;
     case 'quote':quoteModal(itemById(id));break;
+    case 'srEdit':srModal((S.serasa||[]).find(d=>d.id===id));break;
     case 'editGoal':{const G=getGoal();const n=prompt('Nome da meta:',G.name);if(n===null)break;const v=prompt('Valor da meta (R$):',NUM.format(G.amount));if(v===null)break;const a=parseMoney(v);if(!(a>0)){alert('Valor inválido.');break}snap();S.settings.goal={name:n.trim()||'Meta',amount:a};save();render();toast('Meta atualizada: '+fmt(a),true);break}
     case 'payToSend':{const who=el.dataset.who,ym=UI.month;snap();let tot=0;
       byGroup('parcela').filter(i=>i.payTo===who&&planned(i,ym)>0&&!isPaid(i,ym)).forEach(i=>{const k=ym+'|'+i.id;const{manual,...r}=S.status[k]||{amount:null};S.status[k]={...r,paid:true,date:todayISO()};tot+=val(i,ym)});
