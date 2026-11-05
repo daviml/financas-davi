@@ -1380,6 +1380,7 @@ function payToCards(){
     const owed=infos.reduce((s,x)=>s+x.rem,0);
     const last=infos.map(x=>x.d.last).filter(Boolean).sort().pop();
     const shown=infos.filter(x=>x.rem>0.005||planned(x.i,ym)>0||st(x.i,ym));
+    if(!shown.length&&!credShow.length)return''; // nada mais a repassar: o card some
     const nx=ymAdd(ym,1),nxTot=list.reduce((s,i)=>s+val(i,nx),0)-byGroup('receita').filter(i=>i.payFrom===who).reduce((s,i)=>s+val(i,nx),0);
     const all=sent.length===mon.length&&mon.length>0&&!credOpen;
     const net=monTot-sentTot-credOpen;
